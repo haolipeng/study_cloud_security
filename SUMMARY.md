@@ -8,6 +8,7 @@
   * [anchore](镜像安全/anchore/anchore.md)
   * [clair](镜像安全/clair/clair.md)
   * [Grafaes](镜像安全/Grafaes/Grafaes.md)
+  * [trivy](镜像安全/trivy/trivy.md)
   
 * [可观测性](可观测性/可观测性.md)
 * [零信任](零信任/零信任.md)
