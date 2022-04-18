@@ -70,6 +70,8 @@ tar -zxf package_community.tar.gz
 
 ## 3、修改脚本（重要！）
 
+因不同服务在启动时需要一定的时间，所以我们在相应服务的脚本中添加睡眠时间。
+
 修改agent_center的install.sh脚本，在其末尾处添加sleep 60s
 
 ![image-20220413202646424](picture/image-20220413202646424.png)
@@ -404,4 +406,4 @@ systemctl status elkeid-agent
 
 4、ERROR	transport/transfer.go:153	rpc error: code = Unknown desc = agentID conflict
 
-一台机器上只能安装一个agent程序
+原因：一台机器上只能安装一个agent程序
