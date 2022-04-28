@@ -2,11 +2,29 @@
 
 **今日鸡汤：高手和高手之间的差距，就是扣各种细节问题。**
 
+首先要提出问题，然后才能解决问题。
+
+问题1：server如何下发指令给agent的？
+
+问题2：server如何下发插件给agent的？
+
+问题3：server和agent之间的心跳包有什么用？
+
+问题4：server收集了agent的数据后，发往哪里了？
 
 
-今天的主题是server和agent间通信机制，因为
 
-## **一、proto文件**
+问题5：Agent和Server的通信，我看Elkeid是采用的长连接做的。
+
+这种长连接，如果agent断线了，然后agentID已经添加到会话表中了，这时候怎么处理？
+
+agent断线了服务端能感知到，会把agentid从会话列表删除掉
+
+
+
+今天的主题是server和agent间通信机制，因两者采用gRpc + pb的通信方案，所以首先看proto文件是最直接的方法。
+
+# 一、proto文件
 
 agent的proto文件路径：Elkeid/agent/proto/grpc.proto
 
@@ -28,11 +46,15 @@ message PackagedData {
 }
 ```
 
-## **二、agent端源码分析**
+其中EncodedRecord records是我们关注的重点。
+
+# 二、agent端源码分析
 
 ## **2、1 调用堆栈**
 
-agent端属于client端，想创建client，必然要调用grpc.pb.go文件中的函数NewTransferClient
+agent端属于client端，想创建client，必然要调用grpc.pb.go文件中的客户端创建函数（熟悉grpc的朋友都知道）
+
+客户端创建函数NewTransferClient
 
 ```
 func NewTransferClient(cc *grpc.ClientConn) TransferClient {
@@ -40,7 +62,7 @@ func NewTransferClient(cc *grpc.ClientConn) TransferClient {
 }
 ```
 
-![img](picture/v2-c5f7bcb5b6bd18b930b719a09b1718eb_720w-16505479717393.png)
+![v2-c5f7bcb5b6bd18b930b719a09b1718eb_720w-16505479717393](https://gitee.com/codergeek/img/raw/master/img/202204212248416.png)
 
 
 
@@ -50,16 +72,16 @@ func NewTransferClient(cc *grpc.ClientConn) TransferClient {
 
 proto.NewTransferClient()函数的调用者为agent/transport目录下，transfer.go文件的startTransfer函数
 
-```
+```go
 func startTransfer(ctx context.Context, wg *sync.WaitGroup) {
    defer wg.Done()
    retries := 0
    subWg := &sync.WaitGroup{}
    defer subWg.Wait()
    for {
-      //判断连接是否存在
+      //判断连接是否存在，什么情况下获取不到连接呢？
       conn := connection.GetConnection(ctx)
-      // 获取不到连接，则记录重试次数，当重试次数大于5时，提示无可用连接
+      // 获取不到连接，则记录重试次数，当重试次数大于5时，提示无可用连接并跳出循环
       if conn == nil {
          if retries > 5 {
             zap.S().Error("transfer will shutdown because of no avaliable connections")
@@ -79,7 +101,7 @@ func startTransfer(ctx context.Context, wg *sync.WaitGroup) {
       retries = 0
       var client proto.Transfer_TransferClient
       subCtx, cancel := context.WithCancel(ctx)
-      //创建grpc客户端对象，并调用Transfer
+      //创建grpc客户端对象，并调用Transfer，采用了snappyd
       client, err := proto.NewTransferClient(conn).Transfer(subCtx, grpc.UseCompressor("snappy"))
       if err == nil {
          subWg.Add(2)
@@ -107,7 +129,9 @@ func startTransfer(ctx context.Context, wg *sync.WaitGroup) {
 }
 ```
 
-分享一个阅读源代码的小技巧：只看代码的核心逻辑，选择性的暂时不看错误处理的代码，这些代码占总代码的比例很大，其实这些代码仅仅是为了程序的健壮性。
+分享一个阅读源代码的小技巧：只看代码的核心逻辑，选择性的暂时不看错误处理的代码，
+
+这些代码占总代码的比例很大，其实这些代码仅仅是为了程序的健壮性。
 
 如果忽略错误处理代码的话，我们关心的函数仅仅有三个：
 
@@ -196,13 +220,15 @@ func GetConnection(ctx context.Context) *grpc.ClientConn {
 
 GetConnection函数的核心流程如下：
 
-1、取出原子变量conn的值，如果连接存在，则判断其连接状态；
+1、一个agent和agent_center(server)之间仅仅会建立一个通信通道，所以采用原子变量conn  atomic.Value来保存连接的信息。
+
+agent可取出原子变量conn的值，如果连接存在，则判断其连接状态；
 
 2、针对五种连接状态（Ready、Connecting、Idle、TransientFailure、Shutdown），有对应的操作
 
 3、serviceDiscoveryHost、privateHost、publicHost处理逻辑都差不多，此处我们只看publicHost的逻辑；
 
-4、从publicHost映射表中查找Region对应的host主机，调用grpc.DialContext去连接host地址，连接成功则保存连接信息到conn原子变量中，并返回连接信息c
+4、从publicHost映射表中查找Region区域对应的host主机，调用grpc.DialContext去连接host主机地址，连接成功则保存连接信息到conn原子变量中，并返回连接信息c
 
 ### **2、2、2 handleSend()函数**
 
@@ -225,15 +251,15 @@ var (
 )
 ```
 
-**Mu：**多个client同时读写Buf，保证其协程安全的互斥锁
+**Mu：**多个client同时读写Buf数组，保证其协程安全的互斥锁
 
-**Buf：**数据发送缓冲区
+**Buf：**数据发送缓冲区，类型是数组
 
 **Offset：**发送缓冲区的数据偏移量
 
 **ErrBufferOverflow：**超过发送缓冲区容量时，会产生错误
 
-**RecordPool：**EncodedRecord类型的对象池
+**RecordPool：**用于申请EncodedRecord类型对象的对象池
 
 此处RecordPool采用的对象池sync.Pool，对于频繁创建和销毁的对象使用对象池技术，能大大的提升程序性能。
 
@@ -242,7 +268,7 @@ var (
 ```
 case <-ticker.C:
    {
-      //多个客户端同时操作同一个发送缓冲区core.Offset，所以需加锁
+      //多个协程同时操作同一个发送缓冲区core.Offset，所以需加锁
       core.Mu.Lock()
       //发送缓冲区有数据
       if core.Offset != 0 {
@@ -295,7 +321,7 @@ case <-ticker.C:
    }
 ```
 
-1、多个客户端同时操作同一个发送缓冲区core.Offset，所以需加锁Mu；
+1、agent的多个协程同时操作同一个发送缓冲区core.Offset，所以需加锁Mu；
 
 2、当发送缓冲区有数据时，创建EncodedRecord切片，用来存储EncodedRecord；
 
@@ -321,12 +347,10 @@ func handleReceive(ctx context.Context, wg *sync.WaitGroup, client proto.Transfe
    defer zap.S().Info("receive handler will exit")
    zap.S().Info("receive handler running")
    for {
+      //调用client.Recv()从server端接收消息
       cmd, err := client.Recv()
-      if err != nil {
-         zap.S().Error(err)
-         return
-      }
-      zap.S().Info("received command")
+      
+      zap.S().Info("received command")  //此句打印可用于调试
       atomic.AddUint64(&rxCnt, 1) //统计接收数
       if cmd.Task != nil {
          // 给agent的任务
@@ -341,21 +365,21 @@ func handleReceive(ctx context.Context, wg *sync.WaitGroup, client proto.Transfe
 
          } else {
             // 给插件的任务
-            // 根据插件名称来获取插件对象，成功则向插件发送任务
-            // 插件对象为空，则打印错误日志
+            // 根据插件对象名称来获取插件对象
             plg, ok := plugin.Get(cmd.Task.ObjectName)
             if ok {
+               //将任务发送给插件对象
                err = plg.SendTask(*cmd.Task)
                if err != nil {
                   plg.Error("send task to plugin failed: ", err)
                }
-            } else {
+            } else { // 插件对象为空，则打印错误日志
                zap.S().Error("can't find plugin: ", cmd.Task.ObjectName)
             }
          }
          continue
       }
-      // 处理配置变更
+      // 处理配置变更，第一次启动时，下发插件给agent也是走这个流程
       cfgs := map[string]*proto.Config{}
       for _, config := range cmd.Configs {
          cfgs[config.Name] = config
@@ -387,25 +411,25 @@ func handleReceive(ctx context.Context, wg *sync.WaitGroup, client proto.Transfe
 
 1、调用client.Recv()从server端接收消息
 
-2、判断任务cmd.Task是否为nil，大体分为2种情况
+2、判断任务cmd.Task是否为nil，大体分为2种情况，发给agent的任务  vs 发给插件的任务
 
 3、给agent的任务，1060表示关闭agent
 
-4、给插件的任务，根据插件名称来获取插件对象，插件对象有效则向插件发送任务
+4、给插件的任务，agent根据插件名称来获取插件对象，插件对象有效则向插件发送任务
 
 5、处理配置变更，当下发配置的版本和本地的agent版本不同时，更新agent并同步plugin插件信息。
 
-## **三、server端源码分析**
+6、agent和插件交互的部分，就留给下一篇《agent和插件机制篇》来讲解了，敬请期待。
+
+# 三、server端源码分析
 
 ## **3、1 调用堆栈**
 
 调用堆栈如下：
 
-![img](picture/v2-6ae5fa59a9e7730611a306e6f44fe49d_720w.png)
+![img](https://gitee.com/codergeek/img/raw/master/img/202204281258333.png)
 
 
-
-编辑切换为居中
 
 server端调用堆栈
 
@@ -413,6 +437,7 @@ server端调用堆栈
 
 ```
 func runServer(enableCA bool, port int, crtFile, keyFile, caFile string) {
+	//keepalive参数
    // Handling client timeout
    kaep := keepalive.EnforcementPolicy{
       MinTime:             defaultMinPingTime,
@@ -446,6 +471,7 @@ func runServer(enableCA bool, port int, crtFile, keyFile, caFile string) {
 
    //创建grpc server端
    server := grpc.NewServer(opts...)
+   
    //注册服务到grpc server，后续重点看grpc_handler.TransferHandler
    pb.RegisterTransferServer(server, &grpc_handler.TransferHandler{})
    reflection.Register(server)
@@ -465,6 +491,8 @@ func runServer(enableCA bool, port int, crtFile, keyFile, caFile string) {
    }
 }
 ```
+
+重点看grpc_handler.TransferHandler
 
 **转到TransferHandler结构体实现的grpc接口即Transfer函数**
 
@@ -497,10 +525,11 @@ func (h *TransferHandler) Transfer(stream pb.Transfer_TransferServer) error {
       ylog.Errorf("Transfer", "Transfer error %s", err.Error())
       return err
    }
+   //将ip地址转为字符串
    addr := p.Addr.String()
    ylog.Infof("Transfer", ">>>>connection addr: %s", addr)
 
-   //构造连接信息Connection，并添加到连接池中
+   //构造连接信息connection
    //add connection info to the GlobalGRPCPool
    ctx, cancelButton := context.WithCancel(context.Background())
    createAt := time.Now().UnixNano() / (1000 * 1000 * 1000)
@@ -508,10 +537,11 @@ func (h *TransferHandler) Transfer(stream pb.Transfer_TransferServer) error {
       AgentID:     agentID,
       SourceAddr:  addr,
       CreateAt:    createAt,
-      CommandChan: make(chan *pool.Command),
+      CommandChan: make(chan *pool.Command), //接收命令的通道
       Ctx:         ctx,
       CancelFuc:   cancelButton,
    }
+   //将agent以及连接信息添加到连接池GlobalGRPCPool中
    ylog.Infof("Transfer", ">>>>now set %s %v", agentID, connection)
    err = GlobalGRPCPool.Add(agentID, &connection)
    if err != nil {
@@ -545,7 +575,8 @@ func (h *TransferHandler) Transfer(stream pb.Transfer_TransferServer) error {
    }
 
    //这句是什么作用？
-   //stop here
+   //上面的recvData函数和sendData函数正常情况下一直轮询获取数据，
+   //如果出错则会调用ctx.CancelFunc,则会触发 <-connection.Ctx.Done()
    <-connection.Ctx.Done()
    return nil
 }
@@ -557,7 +588,9 @@ func (h *TransferHandler) Transfer(stream pb.Transfer_TransferServer) error {
 
 2、接收第一个包，并获取AgentID值，获取客户端的地址
 
-3、构造连接信息Connection，并添加到连接池中
+3、构造连接信息Connection，连同AgentID一并添加到连接缓存池中，连接cache缓存池使用go
+
+-cache来实现。
 
 4、handleRawData()函数处理处理第一个数据**(重点)**
 
@@ -566,6 +599,9 @@ func (h *TransferHandler) Transfer(stream pb.Transfer_TransferServer) error {
 6、sendData()函数，发送命令给agent**(重点)**
 
 7、PostLatestConfig函数，每次agent连接server时，都将最新配置推送给agent
+
+8、上面的recvData函数和sendData函数正常情况下一直轮询获取数据，
+   如果出错则会调用ctx.CancelFunc,则会触发 <-connection.Ctx.Done()
 
 ## **3、2 核心函数**
 
@@ -678,7 +714,7 @@ func handleRawData(req *pb.RawData, conn *pool.Connection) (agentID string) {
       case 1000: //agent心跳包
          //parse the agent heartbeat data
          parseAgentHeartBeat(req.GetData()[k], req, conn)
-      case 1001: //agent plugin插件心跳包
+      case 1001: //agent plugin插件心跳包，因为plugin采用进程的方式启动，存在进程状态
          //parse the agent plugins heartbeat data
          parsePluginHeartBeat(req.GetData()[k], req, conn)
       case 2001, 2003, 6003:
@@ -689,7 +725,7 @@ func handleRawData(req *pb.RawData, conn *pool.Connection) (agentID string) {
             return
          }
 
-         err = GlobalGRPCPool.PushTask2Manager(item)
+         err = GlobalGRPCPool.PushTask2Manager(item) //这里先留着
          if err != nil {
             ylog.Errorf("handleRawData", "PushTask2Manager error %s", err.Error())
          }
@@ -701,22 +737,49 @@ func handleRawData(req *pb.RawData, conn *pool.Connection) (agentID string) {
 }
 ```
 
-handleRawData函数中涉及到几个函数，正好有时间，我们一起喽喽，您瞧好吧！
+handleRawData函数中涉及到几个功能，梳理后为：
 
-### **1） RawData.GetData()函数**
+1、构造消息，发往kafka消息队列
 
-RawData结构体的GetData函数，返回*Record类型的切片。
+2、处理和agent以及agent plugin插件之间的心跳包
+
+3、任务异步推送到远程进行和解，这里的和解主要是什么？
+
+
+
+#### 1） 构造消息，发往kafka消息队列
+
+首先调用GetData函数，RawData结构体的GetData函数，返回*Record类型的切片。
 
 ```
-func (m *RawData) GetData() []*Record {
-   if m != nil {
-      return m.Data
-   }
-   return nil
-}
+//Loading from the object pool, which can improve performance
+      mqMsg := kafka.MQMsgPool.Get().(*pb.MQData)
+      mqMsg.DataType = req.GetData()[k].DataType //消息的DataType字段赋值
+      mqMsg.AgentTime = req.GetData()[k].Timestamp //时间戳
+      mqMsg.Body = req.GetData()[k].Body	//数据body
+      mqMsg.AgentID = req.AgentID
+      mqMsg.IntranetIPv4 = inIpv4
+      mqMsg.ExtranetIPv4 = exIpv4
+      mqMsg.IntranetIPv6 = inIpv6
+      mqMsg.ExtranetIPv6 = exIpv6
+      mqMsg.Hostname = req.Hostname
+      mqMsg.Version = req.Version
+      mqMsg.Product = req.Product
+      mqMsg.SvrTime = SvrTime
+
+//发往kafka消息队列
+common.KafkaProducer.SendPBWithKey(req.AgentID, mqMsg)
 ```
 
-### **2） PushTask2Manager()函数**
+
+
+#### 2） 心跳包机制
+
+备注：心跳包机制，为讲述的更加清楚，把内容提到了第四章节进行讲解。
+
+
+
+#### 3） PushTask2Manager()函数
 
 逻辑：将task任务投递到g.taskChan中
 
@@ -760,4 +823,116 @@ func (g *GRPCPool) checkTask() {
 
 创建定时器，每隔一定时间检测是否有任务，有则调用client.PostTask(g.taskList)发送一批task任务，然后清零任务列表。
 
-由于时间和经历有限，难免有写的不好的地方，还望大家多多提意见。
+# 四、心跳包机制
+
+## 4、1  agent端心跳包处理
+
+### 4、1、1 agent心跳包
+
+在getAgentStat函数中构造心跳包发送给server，一并将agent的状态信息如cpu，内存，网络io等信息上报给server
+
+
+
+### 4、1、2 agent上的plugin的心跳包
+
+在getPlgStat函数中构造心跳包发送给server，一并将agent plugin的状态信息如cpu，内存，网络io等信息上报给server
+
+
+
+## 4、2  Server端心跳包处理
+
+处理心跳包的代码经过简化后如下所示：
+
+```
+func handleRawData(req *pb.RawData, conn *pool.Connection) (agentID string) {
+	switch mqMsg.DataType {
+		case 1000:
+			//parse the agent heartbeat data
+			parseAgentHeartBeat(req.GetData()[k], req, conn)
+		case 1001:
+			//
+			//parse the agent plugins heartbeat data
+			parsePluginHeartBeat(req.GetData()[k], req, conn)
+	}
+	return req.AgentID
+}
+```
+
+类型为1000的，为server和agent的心跳包，处理函数为parseAgentHeartBeat；
+
+类型为1001的，为server和agent plugin的心跳包，因为plugin采用进程的方式启动，所以需要进程状态，处理函数为parsePluginHeartBeat。
+
+只分析其中一个函数即可
+
+```
+func parseAgentHeartBeat(record *pb.Record, req *pb.RawData, conn *pool.Connection) {
+	var fv float64
+	//解析record记录中的数据
+	hb, err := parseRecord(record)
+	if err != nil {
+		return
+	}
+
+	//存储心跳数据到connect
+	detail := make(map[string]interface{}, len(hb)+9)
+	for k, v := range hb {
+		//部分字段不需要修改，这点要注意
+		if k == "platform_version" {
+			detail[k] = v
+			continue
+		}
+
+		fv, err = strconv.ParseFloat(v, 64)
+		if err == nil {
+			detail[k] = fv
+		} else {
+			detail[k] = v
+		}
+	}
+	detail["agent_id"] = req.AgentID
+	detail["agent_addr"] = conn.SourceAddr
+	detail["create_at"] = conn.CreateAt
+	
+	//内网ipv4地址
+	if req.IntranetIPv4 != nil {
+		detail["intranet_ipv4"] = req.IntranetIPv4
+	} else {
+		detail["intranet_ipv4"] = []string{}
+	}
+	
+	//外网ipv4地址
+	if req.ExtranetIPv4 != nil {
+		detail["extranet_ipv4"] = req.ExtranetIPv4
+	} else {
+		detail["extranet_ipv4"] = []string{}
+	}
+	//内网ipv6地址
+	if req.IntranetIPv6 != nil {
+		detail["intranet_ipv6"] = req.IntranetIPv6
+	} else {
+		detail["intranet_ipv6"] = []string{}
+	}
+	//外网ipv6地址
+	if req.ExtranetIPv6 != nil {
+		detail["extranet_ipv6"] = req.ExtranetIPv6
+	} else {
+		detail["extranet_ipv6"] = []string{}
+	}
+	detail["version"] = req.Version
+	detail["hostname"] = req.Hostname
+	detail["product"] = req.Product
+
+	//last heartbeat time get from server
+	detail["last_heartbeat_time"] = time.Now().Unix()//更新最后一次心跳包的时间
+	conn.SetAgentDetail(detail) //存储agent的详情数据
+}
+```
+
+parseAgentHeartBeat的逻辑很简单，如上述的代码注释。
+
+
+
+由于时间和经历有限，难免有写的不好的地方，还望大家多多提意见，本人会一直更新文章中的不足之处。
+
+
+

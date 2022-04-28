@@ -12,6 +12,7 @@ date modified: Sunday, April 10th 2022, 12:30:56 pm
 - Obsidian 通过 ` 库文件夹 ` 管理笔记，可以将 ` 库文件夹 ` 存储到任何网盘目录。
 
 ## 2. 使用
+已完成的插件使用
 
 一、Advanced Tables 表格插件使用
 
