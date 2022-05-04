@@ -1,3 +1,14 @@
+Elkeid源代码分析进度表
+
+| 事项                           | 状态   | 原因                                                         |
+| ------------------------------ | ------ | ------------------------------------------------------------ |
+| Elkied单机部署文档             | 已完成 |                                                              |
+| Elkeid Server和agent间通信机制 | 已完成 |                                                              |
+| Elkeid 插件机制                | 已完成 |                                                              |
+| Elkeid 驱动部分学习            | 未开始 | https://github.com/bytedance/Elkeid/blob/main/driver/LKM/src/trace_buffer.c |
+
+
+
 有人只需要资产采集不需要HIDS。可以只用agent+资产插件。
 
 
