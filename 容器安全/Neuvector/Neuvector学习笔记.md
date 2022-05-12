@@ -1,14 +1,42 @@
-源代码分析
+Neuvector源代码分析
 
-提出问题：
+2022年5月10号 今天的任务是把Neuvector的官网文档看完。
 
-1、监控模式、学习模式、保护模式分别是如何实现？
 
-2、Neuvector支持哪些协议的解析？
+
+侧重点：
+
+微隔离 
+
+流量侧引擎
+
+应用防护
+
+
+
+OpenShift 学习
+
+
+
+How to Enforce Egress Container Security Policies in Kubernetes, OpenShift, and Istio
+
+https://blog.neuvector.com/article/enforce-egress-control-containers
+
+
+
+1、学习模式、监控模式、保护模式三种模式的区别是什么，分别是如何实现的？
+
+子问题：学习模式是如何建立基线的？在三种不同模式之间切换，满满的都是工作量啊。
+
+
+
+2、Neuvector支持哪些协议的解析？ok,协议识别可以加
+
+NeuVector 深度了解应用程序行为，并将分析有效负载，以确定应用程序协议。协议包括：HTTP，HTTPS，SSL，SSH，DNS，DNCP，NTP，TFTP，ECHO，RTSP，SIP，MySQL，Redis，Zookeeper，Cassandra，MongoDB，PostgresSQL，Kafka，Couchbase，ActiveMQ，ElasticSearch，RabbitMQ，Radius，VoltDB，Consul，Syslog，Etcd，Spark，Apache，Nginx，Jetty，NodeJS，Oracle，MSSQL 和 GRPC。
 
 3、DDOS防护是如何做到的？位图
 
-4、dpl数据防泄露是如何实现的？
+4、waf和dlp数据防泄露是如何实现的？（补）
 
 5、使用正则表达式和hyperscan来进行匹配的数据包
 
@@ -18,9 +46,90 @@
 
 8、Neuvector的会话表是如何进行管理的？
 
-# 一、dp目录结构介绍
+9、基于epoll的事件通知机制是贯穿于整个源代码中的，这块找一个稍微分析下。
 
-dpi目录 deep packet inspect
+10、tcp重组 要看看。
+
+
+
+统一接口 实现->netfilter calico，cilium，xdp，ebpf，cni
+
+calico
+
+kube-ovn
+
+xdp cilium
+
+
+
+xxxxxx
+
+tcp seg1  xxx\oxxxx\0xxx 
+
+tcp seg2 
+
+tcp seg3 
+
+totoal
+
+grpc 长连接
+
+
+
+snort
+
+suricata
+
+
+
+gzip
+
+chunk
+
+
+
+# 零、基础概念
+
+一、组 Groups
+
+
+
+
+
+## 二、网络策略
+
+NeuVector 的组支持 3 种模式：学习模式、监控模式和保护模式；各个模式实现作用如下：
+
+- 学习模式（TODO 学习了什么，什么算法）
+    学习和记录容器、主机间网络连接情况和进程执行信息。
+    自动构建网络规则白名单，保护应用网络正常行为。
+    为每个服务的容器中运行的进程设定安全基线，并创建进程配置文件规则白名单。（TODO）
+- 监控模式
+    NeuVector 监视容器和主机的网络和进程运行情况，遇到非学习模式下记录的行为将在 NeuVector 中进行告警。
+- 保护模式
+    NeuVector 监视容器和主机的网络和进程运行情况，遇到非学习模式下记录的行为直接拒绝。
+
+新建的容器业务被自动发现默认为学习模式，也可以通过设置将默认模式设置为监控模式或保护模式。
+
+
+
+**生产环境最佳实践使用路径可以是：**
+
+- 上新业务时，先学习模式运行一段时间，进行完整的功能测试和调用测试（TODO），得到实际业务环境的网络连接情况和进程执行情况的信息。
+- 监控模式运行一段时间，看看有没有额外的特殊情况，进行判断，添加规则。
+- 最后全部容器都切换到保护模式，确定最终形态。
+
+
+
+# 一、dp项目简介
+
+1、1 dp目录结构介绍
+
+|      |      |      |
+| ---- | ---- | ---- |
+|      |      |      |
+|      |      |      |
+|      |      |      |
 
 third-party目录：
 
@@ -34,7 +143,7 @@ debug.c
 
 debug.h
 
-nfq.c
+nfq.c netfilter文件
 
 pkt.c
 
@@ -66,7 +175,111 @@ rcu map 用户态的rcu
 
 
 
+## 1、2 核心数据结构
+
+会话结构体dpi_session_t
+
+```go
+typedef struct dpi_session_ {
+    struct cds_lfht_node node;//Lock-Free RCU Hash Table 无锁哈希表
+    timer_entry_t ts_entry; //时间轮
+    timer_entry_t tick_entry;//时间轮
+
+    uint32_t id;
+    uint32_t created_at; //会话创建的时间
+    uint32_t last_report;//最近上报时间
+
+    dpi_wing_t client, server;
+    void *parser_data[DPI_PARSER_MAX];
+
+    uint16_t flags;
+    uint8_t tick_flags :4,
+            meter_flags:4;
+    uint8_t only_parser;
+
+    uint32_t small_window_tick; // small window size start tick
+
+    BITMASK_DEFINE(parser_bits, DPI_PARSER_MAX);
+
+    uint16_t app, base_app;
+    uint8_t ip_proto;
+    uint8_t action:      3,
+            severity:    3,
+            term_reason: 2;
+    uint32_t threat_id;
+    dpi_policy_desc_t policy_desc;
+    dpi_policy_desc_t xff_desc;
+    BITOP tags;
+    uint32_t xff_client_ip;
+    uint16_t xff_app;
+    uint16_t xff_port;
+} dpi_session_t;
+```
+
+
+
+## 1、3 线程模型剖析
+
+从线程模型来剖析大局的话，netfilter_queue 0 1
+
+```
+static int net_run(const char *in_iface)
+{
+    pthread_t timer_thr;
+    pthread_t bld_dlp_thr;
+    pthread_t dp_thr[MAX_DP_THREADS];
+    int i, timer_thr_id, bld_dlp_thr_id, thr_id[MAX_DP_THREADS];
+    
+    ......
+
+    dp_ctrl_init_thread_data();
+
+    pthread_create(&timer_thr, NULL, dp_timer_thr, &timer_thr_id);
+
+    pthread_create(&bld_dlp_thr, NULL, dp_bld_dlp_thr, &bld_dlp_thr_id);
+
+    for (i = 0; i < g_dp_threads; i ++) {
+        thr_id[i] = i;
+        pthread_create(&dp_thr[i], NULL, dp_data_thr, &thr_id[i]);
+    }
+
+    dp_ctrl_loop();
+
+    pthread_join(timer_thr, NULL);
+    pthread_join(bld_dlp_thr, NULL);
+    for (i = 0; i < g_dp_threads; i ++) {
+        pthread_join(dp_thr[i], NULL);
+    }
+
+    return 0;
+}
+```
+
+timer_thr线程：用于更新全局时间g_seconds
+
+bld_dlp_thr线程：
+
+dp_thr[i]线程：创建了多个dp_thr线程
+
+
+
 # 二、DPI功能
+
+## 2、0 数据源
+
+DPI分析的网络流量从何而来？主要有三种方式
+
+1、pcap包 -p
+
+2、netfilter_queue
+
+3、ring环 TODO： 重点看了前两者，此处没细看。
+
+切换到容器的命名空间，设置netfilter_queue相关的设置
+
+好处：同一个pod上不同的container上的操作。 TODO
+
+
 
 ## 2、1 网络协议解析
 
@@ -477,6 +690,8 @@ dlp的正则表达式的库，是否好维护？
 
 dpi_dlp_ep_policy_check
 
+
+
 初始化
 
 何时调用
@@ -498,6 +713,14 @@ dpi_pkt_policy_reeval(dpi_packet_t *p)
 
 
 调用栈为：
+
+dpi_recv_packet
+
+dpi_inspect_ethernet
+
+​		dpi_pkt_policy_reeval
+
+​				
 
 ```
 static void dpi_pkt_policy_reeval(dpi_packet_t *p)
@@ -527,11 +750,11 @@ static void dpi_pkt_policy_reeval(dpi_packet_t *p)
 
 
 
-上述代码19、20行中给client和server端都发送reset包
-
 dpi_inject_reset(p, true);
 
 dpi_inject_reset(p, false);
+
+上述代码调用dpi_inject_reset是给client和server端都发送reset包。调用reset包是中断链接，而drop数据包后对端还会进行重传。
 
 
 
@@ -552,9 +775,23 @@ policy_desc和xff_desc的区别是什么？
 
 
 
-
-
 ///////////////////////////////////待解决的问题///////////////////////////////////////////////
+
+七、策略管理
+
+NeuVector 通过组的方式对容器和主机进行管理，对组进行合规性检查、网络规则、进程和文件访问规则、DLP/WAF 的检测配置。
+
+NeuVector 会自动将当前集群主机加入到 nodes 组，对于集群内容器会自动创建以 nv.开头的组。
+
+![img](picture/1834389-20220407110541018-674713994.png)
+
+
+
+
+
+
+
+
 
 前者是策略，后者是什么东西？？？
 
@@ -569,6 +806,17 @@ policy_desc和xff_desc的区别是什么？
 收包线程是哪个函数？锁是如何的？
 
 netfilter_queue的链接要
+
+
+
+cds_lsht_node介绍
+
+cds_lfht_node：包含查找和遍历哈希表所需的下一个指针和反向哈希值。cds_lfht_node 应该以8字节内存对齐，低3位用做flag标志。
+
+struct cds_lfht_node 可以作为字段嵌入到结构中。
+
+caa_container_of() 可用于在查找后从 struct cds_lfht_node 获取结构。
+嵌入它的结构通常保存对象的key键（或键值对）。调用者代码负责计算 cds_lfht API 的哈希值。
 
 
 
@@ -589,3 +837,9 @@ ingress 和 egress是如何来处理的，\#define DPI_PKT_FLAG_INGRESS    0x000
 参考资料：
 
 https://asphaltt.github.io/post/iptables-nfqueue/
+
+
+
+动态微隔离实验
+
+https://www.cnblogs.com/rancherlabs/p/16111452.html
