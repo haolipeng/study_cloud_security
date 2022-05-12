@@ -14,10 +14,6 @@ Neuvector源代码分析
 
 
 
-OpenShift 学习
-
-
-
 How to Enforce Egress Container Security Policies in Kubernetes, OpenShift, and Istio
 
 https://blog.neuvector.com/article/enforce-egress-control-containers
@@ -90,13 +86,27 @@ chunk
 
 # 零、基础概念
 
-一、组 Groups
+## 1） 架构解析
+
+<img src="picture/640.png" alt="图片" style="zoom:67%;" />
+
+NeuVector 本身包含 Controller、Enforcer、Manager、Scanner 和 Updater 模块。 
+
+- Controller ：整个 NeuVector 的控制模块，API 入口，包括配置下发，高可用主要考虑 Controller 的 HA ，通常建议部署 3 个 Controller 模块组成集群。
+- Enforcer ：主要用于安全策略部署下发和执行，DaemonSet 类型会在每个节点部署。
+- Manager：提供 web-UI(仅HTTPS) 和 CLI 控制台，供用户管理 NeuVector 。
+- Scanner ：对节点、容器、Kubernetes 、镜像进行 CVE 漏洞扫描
+- Updater ：cronjob ，用于定期更新 CVE 漏洞库
+
+
+
+## 2）组 Groups
 
 
 
 
 
-## 二、网络策略
+## 3） 网络策略
 
 NeuVector 的组支持 3 种模式：学习模式、监控模式和保护模式；各个模式实现作用如下：
 
@@ -121,15 +131,11 @@ NeuVector 的组支持 3 种模式：学习模式、监控模式和保护模式�
 
 
 
+
+
 # 一、dp项目简介
 
-1、1 dp目录结构介绍
-
-|      |      |      |
-| ---- | ---- | ---- |
-|      |      |      |
-|      |      |      |
-|      |      |      |
+## 1、1 dp目录结构介绍
 
 third-party目录：
 
@@ -690,6 +696,8 @@ dlp的正则表达式的库，是否好维护？
 
 dpi_dlp_ep_policy_check
 
+采用hyperscan作为匹配引擎，后续需安服来维护正则表达式库。
+
 
 
 初始化
@@ -701,6 +709,8 @@ dpi_dlp_ep_policy_check
 # 五、应用层防护 WAF 实现
 
 dpi_waf_ep_policy_check
+
+采用hyperscan作为匹配引擎，后续需安服来维护正则表达式库。
 
 
 
@@ -754,7 +764,7 @@ dpi_inject_reset(p, true);
 
 dpi_inject_reset(p, false);
 
-上述代码调用dpi_inject_reset是给client和server端都发送reset包。调用reset包是中断链接，而drop数据包后对端还会进行重传。
+上述代码调用dpi_inject_reset是给client和server端都发送reset包。调用reset包是中断链接，而drop数据包后对端还会进行数据包重传，从而可能会加大。
 
 
 
@@ -822,7 +832,7 @@ caa_container_of() 可用于在查找后从 struct cds_lfht_node 获取结构。
 
 main函数分析
 
-从pcap包读取数据（主要是用于测试）
+从pcap包读取数据
 
 从ring读取，ring是哪里来的
 
@@ -843,3 +853,9 @@ https://asphaltt.github.io/post/iptables-nfqueue/
 动态微隔离实验
 
 https://www.cnblogs.com/rancherlabs/p/16111452.html
+
+
+
+开源软件的产品分析
+
+https://kubesphere.io/zh/blogs/neuvector-cloud-native-security/

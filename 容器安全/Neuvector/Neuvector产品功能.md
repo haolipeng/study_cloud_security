@@ -4,7 +4,7 @@
 
 
 
-# 一、Dashboard
+# 一、Dashboard仪表盘
 
 ## 1、1 统计信息
 
@@ -13,6 +13,8 @@
 ## 1、2 暴露的ingress和egress
 
 ![image-20220512132547296](picture/image-20220512132547296.png)
+
+右上角可以切换Ingress和Egress按钮，可以查看ingress和egress的pod情况。
 
 ## 1、3 Critical Run-Time Security Events
 
@@ -96,7 +98,7 @@ context上下文支持packet、url、header、body。
 
 
 
-## 4、3 Response Rules
+## 4、3 Response Rules 响应规则
 
 ![image-20220512134636235](picture/image-20220512134636235.png)
 
@@ -142,15 +144,15 @@ Admission策略
 
 
 
-## 4、4 Network Rules
+## 4、4 Network Rules 网络规则
 
 ![image-20220512140148708](picture/image-20220512140148708.png)
 
-From:源组
+From:源组，指定连接的源GROUP
 
-TO:目的Group组
+TO:指定允许或拒绝这些连接的目标 GROUP
 
-Application：应用名称
+Application：指定允许或拒绝的应用程序，Neuvector将分析有效负载以确定应用程序协议；要选择任何/全部，					请将此字段留空。
 
 Ports：端口，如tcp/6443代表tcp协议的6443端口
 
@@ -160,6 +162,14 @@ Type：类型，Learned表示学习
 
 Update at：更新时间
 
+
+
+**重要：**网络规则按照它们在列表中出现的顺序从上到下执行。要重新排序规则，请选择要移动的规则，然后您会看到顶部出现“移动到”框，您可以将选定的规则移动到指定规则之前或之后的位置。
+
+
+
+**重要：**如果您编辑（添加、删除、更改）规则，您的更改将不会应用，直到您单击顶部的保存按钮。如果您在未部署更改的情况下退出此页面，它们将会丢失。
+
 ## 4、5 Groups组
 
 ![image-20220512141337047](picture/image-20220512141337047.png)
@@ -167,6 +177,10 @@ Update at：更新时间
 对于nv.calico-apiserver.calico-apiserver组而言，点击后查看下面的Members成员（2个）
 
 Group命名 = nv + 命名空间 + 服务名
+
+
+
+因为Neuvector的规则都是针对Group组而言的，有进程规则、文件规则、网络规则、响应规则、waf规则、dlp规则等。
 
 ### 1） 进程规则
 
@@ -274,7 +288,7 @@ User groups
 
 # 五、原理篇
 
-**使用 NeuVector 实现容器安全的出口控制**
+## 5、1 容器安全的出口控制
 
 https://blog.neuvector.com/article/enforce-egress-control-containers
 
