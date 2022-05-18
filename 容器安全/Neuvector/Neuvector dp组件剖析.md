@@ -1,24 +1,4 @@
-Neuvector源代码分析
-
-2022年5月10号 今天的任务是把Neuvector的官网文档看完。
-
-
-
-侧重点：
-
-微隔离 
-
-流量侧引擎
-
-应用防护
-
-
-
-How to Enforce Egress Container Security Policies in Kubernetes, OpenShift, and Istio
-
-https://blog.neuvector.com/article/enforce-egress-control-containers
-
-
+**看源代码前心中的疑问**
 
 1、学习模式、监控模式、保护模式三种模式的区别是什么，分别是如何实现的？
 
@@ -30,21 +10,19 @@ https://blog.neuvector.com/article/enforce-egress-control-containers
 
 NeuVector 深度了解应用程序行为，并将分析有效负载，以确定应用程序协议。协议包括：HTTP，HTTPS，SSL，SSH，DNS，DNCP，NTP，TFTP，ECHO，RTSP，SIP，MySQL，Redis，Zookeeper，Cassandra，MongoDB，PostgresSQL，Kafka，Couchbase，ActiveMQ，ElasticSearch，RabbitMQ，Radius，VoltDB，Consul，Syslog，Etcd，Spark，Apache，Nginx，Jetty，NodeJS，Oracle，MSSQL 和 GRPC。
 
-3、DDOS防护是如何做到的？位图
+3、DDOS防护是如何做到的？tcp flag 加 + 位图
 
 4、waf和dlp数据防泄露是如何实现的？（补）
 
-5、使用正则表达式和hyperscan来进行匹配的数据包
+5、协议解析器的注册和使用
 
-6、协议解析器的注册和使用
+6、policy策略管理相关的内容
 
-7、policy策略管理相关的内容
+7、Neuvector的会话表是如何进行管理的？分为几种会话表
 
-8、Neuvector的会话表是如何进行管理的？
+8、基于epoll的事件通知机制是贯穿于整个源代码中的，这块找一个稍微分析下。
 
-9、基于epoll的事件通知机制是贯穿于整个源代码中的，这块找一个稍微分析下。
-
-10、tcp重组 要看看。
+9、tcp包重组，ip分片重组是如何实现的？重组成完整的payload负载，才能更好的进行模式匹配。
 
 
 
@@ -131,59 +109,51 @@ NeuVector 的组支持 3 种模式：学习模式、监控模式和保护模式�
 
 
 
-
-
 # 一、dp项目简介
 
-## 1、1 dp目录结构介绍
+## 1、1 dp目录结构及文件
 
-third-party目录：
+**目录结构概览**
 
-utils目录
+![image-20220518155307549](picture/image-20220518155307549.png)
 
-apis.h
+**重点关注的文件列表：**
 
-ctrl.c
+| 文件名            | 作用                                     | 重要等级 |
+| ----------------- | ---------------------------------------- | -------- |
+| dpi/dpi_packet.c  | 数据包解析(tcp,udp,icmp)                 | 高       |
+| dpi/dpi_parser.c  | 协议解析器                               | 中       |
+| dpi/dpi_session.c | 会话管理(创建、销毁、超时、更新)，时间轮 | 中       |
+| dpi/dpi_frag.c    | ip分片重组                               | 高       |
+| dpi/dpi_meter.c   |                                          |          |
+| dpi/dpi_module.h  | dp项目使用的全局变量                     | 高       |
+| dpi/dpi_policy.c  | 策略相关（增删改查）                     | 高       |
+| ctrl.c            | netfilter_queue，tap，port相关控制代码   | 高       |
+| nfq.c             | netfilter_queue方式捕获数据包            | 高       |
+| pkt.c             |                                          | 高       |
+| ring.c            | SOCK_RAW原始套接字方式捕获数据包         | 高       |
+| main.c            | 项目的主文件，入口文件                   | 高       |
 
-debug.c
-
-debug.h
-
-nfq.c netfilter文件
-
-pkt.c
-
-ring.c
-
-main.h
-
-main.c
-
-Makefile
-
-
-
-dp目录结构之外的文件
-
-defs.h 重要定义都在此处 TODO：重视此文件
+上级目录中的defs.h 很重要，很多宏定义和变量都在此文件中。
 
 
 
-基础组件
+**dp项目中引用的第三方库**
 
-正则表达式
-
-hyperscan
-
-rcu map 用户态的rcu
-
-时间轮，超时机制，以前写过，大概看看api就行
+| 库名称    | 作用                                |
+| --------- | ----------------------------------- |
+| hyperscan | 正则表达式匹配库                    |
+| jansson   | json数据的序列化和反序列化          |
+| jemalloc  | 内存池                              |
+| pcre2     | 正则表达式解析                      |
+| timeout   | 超时库(时间轮)                      |
+| urcu      | 用户态的rcu库，用于替代rwlock读写锁 |
 
 
 
 ## 1、2 核心数据结构
 
-会话结构体dpi_session_t
+### 1、2、1 会话结构体
 
 ```go
 typedef struct dpi_session_ {
@@ -222,11 +192,125 @@ typedef struct dpi_session_ {
 } dpi_session_t;
 ```
 
+dpi_session_t结构体用于描述会话，不仅仅是tcp会话，也可以是ip、udp会话。
+
+1、使用无锁rcu哈希表
+
+2、时间轮
+
+timer_entry_t ts_entry; //时间轮
+timer_entry_t tick_entry;//时间轮
+
+这两个时间轮之间的差别是什么？有知道的小伙伴告诉我下吗？
+
+3、会话的client端及server端信息
+
+dpi_wing_t client, server;
+
+```
+typedef struct dpi_wing_ {
+    uint8_t mac[ETH_ALEN]; //mac地址
+    uint16_t port;//端口
+    io_ip_t ip;//ip地址
+    uint32_t next_seq, init_seq;//init_seq初始化，next_seq下一个序列号
+    uint32_t asm_seq;//TODO:
+
+    union {
+        struct {
+            uint32_t tcp_acked;
+            uint32_t tcp_win;//tcp窗口大小
+        };
+        struct {
+            uint32_t icmp_echo_hash;
+            uint16_t icmp_echo_seq;
+            uint8_t icmp_times;
+        };
+    };
+    uint16_t tcp_mss;//Maximum Segment Size最大分段大小
+    uint8_t tcp_state:  4,
+            tcp_wscale: 4;
+    uint8_t flags;//标志位
+    asm_t asm_cache;
+    uint32_t pkts, bytes;//数据包数和字节数
+    uint32_t reported_pkts, reported_bytes;//已上报数据包数和已上报字节数
+} dpi_wing_t;
+```
+
+
+
+### 1、2、2 io通信结构体
+
+```
+typedef struct io_callback_ {
+    int (*debug) (bool print_ts, const char *fmt, va_list args);
+    int (*send_packet) (io_ctx_t *ctx, uint8_t *data, int len);
+    int (*send_ctrl_json) (json_t *root);
+    int (*send_ctrl_binary) (void *buf, int len);
+    int (*threat_log) (DPMsgThreatLog *log);
+    int (*traffic_log) (DPMsgSession *log);
+    int (*connect_report) (DPMsgSession *log, int count_session, int count_violate);
+} io_callback_t;
+```
+
+其赋值处有很多，以standalone模式举例
+
+```
+void dpi_setup(io_callback_t *cb, io_config_t *cfg)
+{
+    g_io_callback = cb;
+    g_io_config = cfg;
+}
+```
+
+只看standalone模式下
+
+```
+if (standalone) {
+        g_callback.debug = debug_stdout;
+        g_callback.send_packet = dp_send_packet;
+        g_callback.send_ctrl_json = dp_ctrl_send_json;
+        g_callback.send_ctrl_binary = dp_ctrl_send_binary;
+        g_callback.threat_log = dp_ctrl_threat_log;
+        g_callback.traffic_log = dp_ctrl_traffic_log;
+        g_callback.connect_report = dp_ctrl_connect_report;
+        dpi_setup(&g_callback, &g_config);
+
+        int ret = net_run(g_in_iface);
+    }
+```
+
+其中比较重要的是dp_ctrl_send_json和dp_ctrl_send_binary。
+
+dp_ctrl_send_json：将 json 消息作为响应发送到客户端套接字。
+
+dp_ctrl_send_binary:将二进制消息作为响应发送到客户端套接字。
+
 
 
 ## 1、3 线程模型剖析
 
-从线程模型来剖析大局的话，netfilter_queue 0 1
+多线程并发结构体，如下：
+
+```c
+#define th_packet   (g_dpi_thread_data[THREAD_ID].packet)
+#define th_snap     (g_dpi_thread_data[THREAD_ID].snap)
+#define th_counter  (g_dpi_thread_data[THREAD_ID].counter)
+#define th_stats    (g_dpi_thread_data[THREAD_ID].stats)
+
+#define th_ip4frag_map  (g_dpi_thread_data[THREAD_ID].ip4frag_map)
+#define th_session4_map (g_dpi_thread_data[THREAD_ID].session4_map)
+#define th_session4_proxymesh_map (g_dpi_thread_data[THREAD_ID].session4_proxymesh_map)
+```
+
+g_dpi_thread_data[THREAD_ID].xxxxx代表每个线程都有属于自己的资源，如会话表、分片表，数据包、状态记录等。
+
+
+
+从线程模型来剖析大局的话，整个项目只创建了三个线程：
+
+- 一个定时器线程timer_thr
+- 一个dlp线程bld_dlp_thr
+- 多个数据接收线程dp_thr
 
 ```
 static int net_run(const char *in_iface)
@@ -261,17 +345,91 @@ static int net_run(const char *in_iface)
 }
 ```
 
-timer_thr线程：用于更新全局时间g_seconds
+timer_thr线程：用于更新全局时间g_seconds的线程
 
 bld_dlp_thr线程：
 
-dp_thr[i]线程：创建了多个dp_thr线程
+dp_thr[i]线程：用于收包的线程，创建了g_dp_threads个dp_thr线程，只有一个线程去更新全局统计计数。
+
+下面重点看下dp_thr线程的线程函数dp_data_thr
+
+```c
+void *dp_data_thr(void *args)
+{
+   	......
+
+    // Create epoll, add ctrl_req event
+    if ((th_epoll_fd(thr_id) = epoll_create(MAX_EPOLL_EVENTS)) < 0)
+
+    ctrl_req_ev_ctx = dp_add_ctrl_req_event(thr_id);
+
+#define NO_WAIT    0
+#define SHORT_WAIT 2
+#define LONG_WAIT  1000
+    // Even at packet rate of 1M pps, wait 0.002s means 2K packets. DP queue should
+    // be able to accomodate it. Increase wait duration reduce idle CPU usage, but
+    // worsen the latency, such as ping latency in protect mode.
+    tmo = SHORT_WAIT;
+    uint32_t last_seconds = g_seconds;
+    while (g_running) {
+        // Check if polling context exist, if yes, keep polling it.
+        dp_context_t *polling_ctx = th_ctx_inline(thr_id);
+        if (likely(polling_ctx != NULL)) {
+            if (likely(dp_rx(polling_ctx, g_seconds) == DP_RX_MORE)) {
+                // If there are more packets to consume, not to add polling context to epoll,
+                // use no-wait time out so we can get back to polling right away.
+                tmo = NO_WAIT;
+                polling_ctx = NULL;
+            } else {
+                // If all packets are consumed, add polling context to epoll, so once there is
+                // a packet, it can be handled.
+                if (dp_epoll_add_ctx(polling_ctx, thr_id) < 0) {
+                    tmo = SHORT_WAIT;
+                    polling_ctx = NULL;
+                } else {
+                    tmo = LONG_WAIT;
+                }
+            }
+        }
+
+        int i, evs;
+        evs = epoll_wait(th_epoll_fd(thr_id), epoll_evs, MAX_EPOLL_EVENTS, tmo);
+        if (evs > 0) {
+            for (i = 0; i < evs; i ++) {
+                struct epoll_event *ee = &epoll_evs[i];
+                dp_context_t *ctx = ee->data.ptr;
+
+                if (ee->events & EPOLLIN) {
+                    if (ctx->fd == th_ctrl_req_evfd(thr_id)) {
+                        uint64_t cnt;
+                        read(ctx->fd, &cnt, sizeof(uint64_t));
+                        if (th_ctrl_req(thr_id)) {
+                            io_ctx_t context;
+                            context.tick = g_seconds;
+                            context.tap = ctx->tap;
+                            dpi_handle_ctrl_req(th_ctrl_req(thr_id), &context);
+                        }
+                    } else {
+                        dp_rx(ctx, g_seconds);
+                    }
+                }
+            }
+        }
+		......
+    }
+
+    close(th_epoll_fd(thr_id));
+    th_epoll_fd(thr_id) = 0;
+
+    return NULL;
+}
+```
 
 
 
 # 二、DPI功能
 
-## 2、0 数据源
+## 2、1 数据源
 
 DPI分析的网络流量从何而来？主要有三种方式
 
@@ -287,7 +445,7 @@ DPI分析的网络流量从何而来？主要有三种方式
 
 
 
-## 2、1 网络协议解析
+## 2、2 网络协议解析
 
 dpi_parse_ethernet()
 
@@ -379,7 +537,7 @@ static int dpi_parse_tcp(dpi_packet_t *p)
 
 
 
-## 2、2 应用层协议解析
+## 2、3 应用层协议解析
 
 解析器代码都位于dpi/parser目录中
 
@@ -387,7 +545,7 @@ static int dpi_parse_tcp(dpi_packet_t *p)
 
 
 
-### 2、2、1 注册流程
+### 2、3、1 注册流程
 
 ```
 void dpi_parser_setup(void)
@@ -446,7 +604,7 @@ static dpi_parser_t dpi_parser_dhcp = {
 
 
 
-### 2、2、2 调用流程
+### 2、3、2 调用流程
 
 由于我只关心解析数据包，所以看parser回调函数。
 
@@ -458,7 +616,7 @@ dpi_pkt_proto_parser
 
 
 
-## 2、3 ip分片
+## 2、4 ip分片
 
 ip分片以ipv4版本来进行讲解
 
@@ -480,7 +638,7 @@ typedef struct dpi_thread_data_ {
     rcu_map_t session4_map;			//ipv4会话表
     rcu_map_t session4_proxymesh_map;
     rcu_map_t session6_map;			//ipv6会话表
-    rcu_map_t session6_proxymesh_map;
+    rcu_map_t session6_proxymesh_map;//proxy mesh map
     rcu_map_t meter_map;
     rcu_map_t log_map;
     rcu_map_t unknown_ip_map;		//未知ip的映射表
@@ -559,7 +717,9 @@ int dpi_ip_defrag(dpi_packet_t *p)
 
 
 
-## 2、4 会话管理
+## 2、5 会话管理
+
+### 2、5、1 ipv4会话管理
 
 会话管理以ipv4版本来进行讲解
 
@@ -659,7 +819,13 @@ rcu_map_del(&th_session4_map, s);
 
 
 
-# 三、DDOS防护
+### 2、5、2 ipv6 会话管理
+
+### 2、5、3 proxymesh会话管理
+
+
+
+# 三、DDOS防护实现
 
 只是简单的判断了tcp的标志位。
 
@@ -718,7 +884,7 @@ dpi_waf_ep_policy_check
 
 微隔离实现的关键函数为
 
-dpi_pkt_policy_reeval(dpi_packet_t *p)
+dpi_pkt_policy_reeval()
 
 
 
@@ -844,7 +1010,49 @@ ingress 和 egress是如何来处理的，\#define DPI_PKT_FLAG_INGRESS    0x000
 
 
 
+回答文档一开始提出的问题：
+
+1、学习模式、监控模式、保护模式三种模式的区别是什么，分别是如何实现的？
+
+子问题：学习模式是如何建立基线的？在三种不同模式之间切换，满满的都是工作量啊。
+
+
+
+2、Neuvector支持哪些协议的解析？ok,协议识别可以加
+
+NeuVector 深度了解应用程序行为，并将分析有效负载，以确定应用程序协议。协议包括：HTTP，HTTPS，SSL，SSH，DNS，DNCP，NTP，TFTP，ECHO，RTSP，SIP，MySQL，Redis，Zookeeper，Cassandra，MongoDB，PostgresSQL，Kafka，Couchbase，ActiveMQ，ElasticSearch，RabbitMQ，Radius，VoltDB，Consul，Syslog，Etcd，Spark，Apache，Nginx，Jetty，NodeJS，Oracle，MSSQL 和 GRPC。
+
+3、DDOS防护是如何做到的？tcp flag 加 + 位图
+
+4、waf和dlp数据防泄露是如何实现的？（补）
+
+5、协议解析器的注册和使用
+
+6、policy策略管理相关的内容
+
+7、Neuvector的会话表是如何进行管理的？分为几种会话表
+
+8、基于epoll的事件通知机制是贯穿于整个源代码中的，这块找一个稍微分析下。
+
+9、tcp包重组，ip分片重组是如何实现的？重组成完整的payload负载，才能更好的进行模式匹配。
+
+
+
+需要补充下proxy mesh的知识
+
+
+
 参考资料：
+
+
+
+How to Enforce Egress Container Security Policies in Kubernetes, OpenShift, and Istio
+
+https://blog.neuvector.com/article/enforce-egress-control-containers
+
+
+
+iptables netfilter_queue
 
 https://asphaltt.github.io/post/iptables-nfqueue/
 
