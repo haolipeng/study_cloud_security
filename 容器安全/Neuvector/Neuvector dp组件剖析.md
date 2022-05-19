@@ -1,54 +1,85 @@
 **看源代码前心中的疑问**
 
+看代码要有目的的看，才会更有效果。
+
 1、学习模式、监控模式、保护模式三种模式的区别是什么，分别是如何实现的？
 
 子问题：学习模式是如何建立基线的？在三种不同模式之间切换，满满的都是工作量啊。
 
 
 
-2、Neuvector支持哪些协议的解析？ok,协议识别可以加
+2、Neuvector支持哪些协议的解析？（TODO：可加协议识别引擎）
 
-NeuVector 深度了解应用程序行为，并将分析有效负载，以确定应用程序协议。协议包括：HTTP，HTTPS，SSL，SSH，DNS，DNCP，NTP，TFTP，ECHO，RTSP，SIP，MySQL，Redis，Zookeeper，Cassandra，MongoDB，PostgresSQL，Kafka，Couchbase，ActiveMQ，ElasticSearch，RabbitMQ，Radius，VoltDB，Consul，Syslog，Etcd，Spark，Apache，Nginx，Jetty，NodeJS，Oracle，MSSQL 和 GRPC。
+NeuVector 深度了解应用程序行为，并将分析有效负载，以确定应用程序协议。协议包括：
 
-3、DDOS防护是如何做到的？tcp flag 加 + 位图
+HTTP，HTTPS，SSL，SSH，DNS，DNCP，NTP，TFTP，ECHO，RTSP，SIP，MySQL，Redis，Zookeeper，Cassandra，MongoDB，PostgresSQL，Kafka，Couchbase，ActiveMQ，ElasticSearch，RabbitMQ，Radius，VoltDB，Consul，Syslog，Etcd，Spark，Apache，Nginx，Jetty，NodeJS，Oracle，MSSQL 和 GRPC。
 
-4、waf和dlp数据防泄露是如何实现的？（补）
+
+
+3、DDOS防护是如何做到的？
+
+答：tcp flag  + bitmap 位图
+
+
+
+4、waf和dlp数据防泄露是如何实现的？
+
+对于tcp/udp负载数据进行持续的正则匹配，使用pcre和hyperscan引擎来匹配。
+
+TODO:对接下waf和dlp的owasp的ruleset规则，可减少运维工作量。
+
+
 
 5、协议解析器的注册和使用
 
+构造出协议树，应用层协议->传输层协议，结构体的注册回调机制；
+
+当解析数据包时，遍历指定协议下的所有协议解析器
+
+
+
 6、policy策略管理相关的内容
 
-7、Neuvector的会话表是如何进行管理的？分为几种会话表
-
-8、基于epoll的事件通知机制是贯穿于整个源代码中的，这块找一个稍微分析下。
-
-9、tcp包重组，ip分片重组是如何实现的？重组成完整的payload负载，才能更好的进行模式匹配。
+- 关注策略相关结构
+- 策略的下发流程
 
 
 
-统一接口 实现->netfilter calico，cilium，xdp，ebpf，cni
+7、Neuvector的会话表是如何进行管理的？分为几种会话表？
 
-calico
+​    rcu_map_t ip4frag_map; 			//ipv4分片表
+​    rcu_map_t ip6frag_map;			//ipv6分片表
+​    rcu_map_t session4_map;			//ipv4会话表
+​    rcu_map_t session4_proxymesh_map;
+​    rcu_map_t session6_map;			//ipv6会话表
+​    rcu_map_t session6_proxymesh_map;//proxy mesh map
+​    rcu_map_t unknown_ip_map;		//未知ip的映射表
 
-kube-ovn
+**会话表类别：**
 
-xdp cilium
-
-
-
-xxxxxx
-
-tcp seg1  xxx\oxxxx\0xxx 
-
-tcp seg2 
-
-tcp seg3 
-
-totoal
-
-grpc 长连接
+- ip分片表
+- ip会话表
+- proxymesh会话表
 
 
+
+8、tcp包重组，ip分片重组是如何实现的？
+
+一般来说，将多个数据包重组为完整的payload负载，才能更好的进行模式匹配(waf和dlp检测)。
+
+而Neuvector另辟蹊径，考虑到tcp包重组在云环境中会消耗更多的内存，可能会影响到客户的环境，所以采用类似状态机的机制来进行规则的匹配。
+
+
+
+9、还需加强的地方？
+
+微隔离产品 = 数据面 + 控制面，将策略和执行分离是最好的。
+
+控制面统一接口，具体实现可能有几种sdn_controller，netfilter_queue，calico，cilium，xdp，ebpf，等等
+
+
+
+这两个开源再好好的过一遍，很久没玩，有点忘记了
 
 snort
 
@@ -56,13 +87,15 @@ suricata
 
 
 
+http负载数据一般是压缩的：
+
 gzip
 
 chunk
 
 
 
-# 零、基础概念
+# 一、基础概念
 
 ## 1） 架构解析
 
@@ -109,9 +142,9 @@ NeuVector 的组支持 3 种模式：学习模式、监控模式和保护模式�
 
 
 
-# 一、dp项目简介
+# 二、dp项目简介
 
-## 1、1 dp目录结构及文件
+## 2、1 dp目录结构及文件
 
 **目录结构概览**
 
@@ -134,6 +167,8 @@ NeuVector 的组支持 3 种模式：学习模式、监控模式和保护模式�
 | ring.c            | SOCK_RAW原始套接字方式捕获数据包         | 高       |
 | main.c            | 项目的主文件，入口文件                   | 高       |
 
+meter是仪表盘，用于统计程序运行过程中的数据。
+
 上级目录中的defs.h 很重要，很多宏定义和变量都在此文件中。
 
 
@@ -151,9 +186,9 @@ NeuVector 的组支持 3 种模式：学习模式、监控模式和保护模式�
 
 
 
-## 1、2 核心数据结构
+## 2、2 核心数据结构
 
-### 1、2、1 会话结构体
+### 2、2、1 会话结构体
 
 ```go
 typedef struct dpi_session_ {
@@ -238,7 +273,7 @@ typedef struct dpi_wing_ {
 
 
 
-### 1、2、2 io通信结构体
+### 2、2、2 io通信结构体
 
 ```
 typedef struct io_callback_ {
@@ -287,7 +322,7 @@ dp_ctrl_send_binary:将二进制消息作为响应发送到客户端套接字。
 
 
 
-## 1、3 线程模型剖析
+## 2、3 线程模型剖析
 
 多线程并发结构体，如下：
 
@@ -425,11 +460,24 @@ void *dp_data_thr(void *args)
 }
 ```
 
+## 2、4 基础组件介绍
+
+### 2、4、1 lock-free rcu hash-table
+
+cds_lsht_node介绍
+
+cds_lfht_node：包含查找和遍历哈希表所需的下一个指针和反向哈希值。cds_lfht_node 应该以8字节内存对齐，低3位用做flag标志。
+
+struct cds_lfht_node 可以作为字段嵌入到结构中。
+
+caa_container_of() 可用于在查找后从 struct cds_lfht_node 获取结构。
+嵌入它的结构通常保存对象的key键（或键值对）。调用者代码负责计算 cds_lfht API 的哈希值。
 
 
-# 二、DPI功能
 
-## 2、1 数据源
+# 三、DPI功能
+
+## 3、1 数据源
 
 DPI分析的网络流量从何而来？主要有三种方式
 
@@ -445,7 +493,7 @@ DPI分析的网络流量从何而来？主要有三种方式
 
 
 
-## 2、2 网络协议解析
+## 3、2 网络协议解析
 
 dpi_parse_ethernet()
 
@@ -537,7 +585,7 @@ static int dpi_parse_tcp(dpi_packet_t *p)
 
 
 
-## 2、3 应用层协议解析
+## 3、3 应用层协议解析
 
 解析器代码都位于dpi/parser目录中
 
@@ -545,7 +593,7 @@ static int dpi_parse_tcp(dpi_packet_t *p)
 
 
 
-### 2、3、1 注册流程
+### 3、3、1 注册流程
 
 ```
 void dpi_parser_setup(void)
@@ -604,7 +652,7 @@ static dpi_parser_t dpi_parser_dhcp = {
 
 
 
-### 2、3、2 调用流程
+### 3、3、2 调用流程
 
 由于我只关心解析数据包，所以看parser回调函数。
 
@@ -616,7 +664,7 @@ dpi_pkt_proto_parser
 
 
 
-## 2、4 ip分片
+## 3、4 ip分片
 
 ip分片以ipv4版本来进行讲解
 
@@ -717,9 +765,9 @@ int dpi_ip_defrag(dpi_packet_t *p)
 
 
 
-## 2、5 会话管理
+## 3、5 会话管理
 
-### 2、5、1 ipv4会话管理
+### 3、5、1 ipv4会话管理
 
 会话管理以ipv4版本来进行讲解
 
@@ -819,13 +867,51 @@ rcu_map_del(&th_session4_map, s);
 
 
 
-### 2、5、2 ipv6 会话管理
+### 3、5、2 ipv6 会话管理
 
-### 2、5、3 proxymesh会话管理
+### 3、5、3 proxymesh会话管理
 
 
 
-# 三、DDOS防护实现
+## 3、6 meter仪表盘功能
+
+```
+typedef struct dpi_meter_ {
+    struct cds_lfht_node node;
+    timer_entry_t ts_entry;
+
+    io_ip_t peer_ip;
+    uint8_t ep_mac[ETH_ALEN];
+    uint8_t type;
+#define DPI_METER_FLAG_ON   0x01
+    uint8_t flags;
+    uint32_t count, last_count, log_count;
+    uint32_t start_tick, last_log;
+    DPMsgThreatLog log;
+} dpi_meter_t;
+```
+
+meter功能的核心结构体是dpi_meter_t，Neuvector维护了rcu_map_t meter_map;
+
+```
+int dpi_meter_packet_inc(uint8_t type, dpi_packet_t *p);
+int dpi_meter_synflood_inc(dpi_packet_t *p);
+int dpi_meter_session_inc(dpi_packet_t *p, dpi_session_t *s);
+void dpi_meter_session_dec(dpi_session_t *s);
+bool dpi_meter_session_rate(uint8_t type, dpi_session_t *s);
+```
+
+meter仪表盘数据统计的维度有以上三种：
+
+1、数据包情况
+
+2、会话情况
+
+3、synflood泛洪情况
+
+
+
+# 四、DDOS防护实现
 
 只是简单的判断了tcp的标志位。
 
@@ -856,7 +942,7 @@ BITMASK_DEFINE(tcp_bad_flag_mask, 256);
 
 
 
-# 四、数据防泄露DLP实现
+# 五、数据防泄露DLP实现
 
 dlp的正则表达式的库，是否好维护？
 
@@ -872,7 +958,7 @@ dpi_dlp_ep_policy_check
 
 
 
-# 五、应用层防护 WAF 实现
+# 六、应用层防护 WAF 实现
 
 dpi_waf_ep_policy_check
 
@@ -880,7 +966,7 @@ dpi_waf_ep_policy_check
 
 
 
-# 六、微隔离
+# 七、微隔离
 
 微隔离实现的关键函数为
 
@@ -888,15 +974,11 @@ dpi_pkt_policy_reeval()
 
 
 
-调用栈为：
+函数调用栈为：
 
-dpi_recv_packet
+dpi_recv_packet() -> dpi_inspect_ethernet() -> dpi_pkt_policy_reeval()
 
-dpi_inspect_ethernet
 
-​		dpi_pkt_policy_reeval
-
-​				
 
 ```
 static void dpi_pkt_policy_reeval(dpi_packet_t *p)
@@ -924,7 +1006,7 @@ static void dpi_pkt_policy_reeval(dpi_packet_t *p)
 }
 ```
 
-
+那微隔离是如何阻断的呢？
 
 dpi_inject_reset(p, true);
 
@@ -947,123 +1029,117 @@ void dpi_inject_reset(dpi_packet_t *p, bool to_server)
 
 
 
-policy_desc和xff_desc的区别是什么？
+对于上述代码中的第15~20行代码
 
+```
+// For mid session deny, keep the session to block
+// traffic coming afterwards
+//dpi_session_delete(s, DPI_SESS_TERM_POLICY);
+//p->session = NULL;
+p->session->action = DPI_ACTION_BLOCK;
+dpi_set_action(p, DPI_ACTION_DROP);
+```
 
+对于中间会话的拒绝，保留会话以阻止之后的流量。（没毛病，老铁）
 
-///////////////////////////////////待解决的问题///////////////////////////////////////////////
-
-七、策略管理
+# 八、策略管理
 
 NeuVector 通过组的方式对容器和主机进行管理，对组进行合规性检查、网络规则、进程和文件访问规则、DLP/WAF 的检测配置。
 
-NeuVector 会自动将当前集群主机加入到 nodes 组，对于集群内容器会自动创建以 nv.开头的组。
+NeuVector 会自动将当前集群主机加入到 nodes 组，对于集群内容器会自动创建以 nv.开头的组(如nv.calico-kube-controller.kube-system)。
 
 ![img](picture/1834389-20220407110541018-674713994.png)
 
 
 
+函数调用栈如下：
+
+dp_ctrl_loop() -> dp_ctrl_handler() -> dp_ctrl_cfg_policy() ->dpi_policy_cfg()
 
 
 
+```
+void dp_ctrl_loop(void)
+{
+    ......
+    while (g_running) {
+        timeout.tv_sec = 2;
+        timeout.tv_usec = 0;
+
+        FD_ZERO(&read_fds);
+        FD_SET(g_ctrl_fd, &read_fds);
+        ret = select(g_ctrl_fd + 1, &read_fds, NULL, NULL, &timeout);
+
+        if (ret > 0 && FD_ISSET(g_ctrl_fd, &read_fds)) {
+            dp_ctrl_handler(g_ctrl_fd);
+        }
+    }
+    ......
+}
+```
+
+dp_ctrl_loop函数中使用select网络模型监听可读事件，有可读事件时调用dp_ctrl_handler
+
+```
+static int dp_ctrl_handler(int fd)
+{
+    ......
+    json_object_foreach(root, key, msg) {
+		......
+        else if (strcmp(key, "ctrl_cfg_policy") == 0) {
+            ret = dp_ctrl_cfg_policy(msg);
+        }
+        ......
+    }
+
+    json_decref(root);
+
+    return ret;
+}
+```
+
+解析对端传递的json数据，并找到对应的处理函数，如ctrl_cfg_policy的处理函数是dp_ctrl_cfg_policy
 
 
 
-前者是策略，后者是什么东西？？？
+基于epoll的事件驱动模型。和libevent的基于事件的驱动模型是几乎一模一样的。
 
-对于中间会话的拒绝，保留会话以阻止之后的流量。（没毛病，老铁）
-
-
-
-还未解决的问题，meter是什么东西？
-
-所有的时间采用的基于epoll的事件驱动模型，来进行编程。
-
-收包线程是哪个函数？锁是如何的？
-
-netfilter_queue的链接要
-
-
-
-cds_lsht_node介绍
-
-cds_lfht_node：包含查找和遍历哈希表所需的下一个指针和反向哈希值。cds_lfht_node 应该以8字节内存对齐，低3位用做flag标志。
-
-struct cds_lfht_node 可以作为字段嵌入到结构中。
-
-caa_container_of() 可用于在查找后从 struct cds_lfht_node 获取结构。
-嵌入它的结构通常保存对象的key键（或键值对）。调用者代码负责计算 cds_lfht API 的哈希值。
-
-
-
-main函数分析
-
-从pcap包读取数据
-
-从ring读取，ring是哪里来的
-
-从netfilter_queue进行读取
-
-proxymesh是对应什么场景？
+从ring读取，ring是哪里来的,共享内存是干什么?
 
 ingress 和 egress是如何来处理的，\#define DPI_PKT_FLAG_INGRESS    0x00000100宏是如何发挥作用的
 
-
-
-回答文档一开始提出的问题：
-
-1、学习模式、监控模式、保护模式三种模式的区别是什么，分别是如何实现的？
-
-子问题：学习模式是如何建立基线的？在三种不同模式之间切换，满满的都是工作量啊。
+这几块的代码也看了，但是文字方面并没有补，因为逻辑上比较复杂，所以考虑绘制下状态图来梳理下思路。
 
 
 
-2、Neuvector支持哪些协议的解析？ok,协议识别可以加
 
-NeuVector 深度了解应用程序行为，并将分析有效负载，以确定应用程序协议。协议包括：HTTP，HTTPS，SSL，SSH，DNS，DNCP，NTP，TFTP，ECHO，RTSP，SIP，MySQL，Redis，Zookeeper，Cassandra，MongoDB，PostgresSQL，Kafka，Couchbase，ActiveMQ，ElasticSearch，RabbitMQ，Radius，VoltDB，Consul，Syslog，Etcd，Spark，Apache，Nginx，Jetty，NodeJS，Oracle，MSSQL 和 GRPC。
 
-3、DDOS防护是如何做到的？tcp flag 加 + 位图
+# 参考资料：
 
-4、waf和dlp数据防泄露是如何实现的？（补）
-
-5、协议解析器的注册和使用
-
-6、policy策略管理相关的内容
-
-7、Neuvector的会话表是如何进行管理的？分为几种会话表
-
-8、基于epoll的事件通知机制是贯穿于整个源代码中的，这块找一个稍微分析下。
-
-9、tcp包重组，ip分片重组是如何实现的？重组成完整的payload负载，才能更好的进行模式匹配。
+proxymesh是对应什么场景？需要补充下proxy mesh的知识
 
 
 
-需要补充下proxy mesh的知识
 
 
-
-参考资料：
-
-
-
-How to Enforce Egress Container Security Policies in Kubernetes, OpenShift, and Istio
+**How to Enforce Egress Container Security Policies in Kubernetes, OpenShift, and Istio**
 
 https://blog.neuvector.com/article/enforce-egress-control-containers
 
 
 
-iptables netfilter_queue
+**iptables netfilter_queue**
 
 https://asphaltt.github.io/post/iptables-nfqueue/
 
 
 
-动态微隔离实验
+**动态微隔离实验**
 
 https://www.cnblogs.com/rancherlabs/p/16111452.html
 
 
 
-开源软件的产品分析
+**开源软件的产品分析**
 
 https://kubesphere.io/zh/blogs/neuvector-cloud-native-security/
