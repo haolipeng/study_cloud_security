@@ -35,6 +35,12 @@ ck做长期的数仓很合适，长时段的统计分析，甚至可以搞搞ueb
 
 使用flink对记录进行聚合，但是现在看来好像是不太对劲。
 
+https://github.com/njcx/flink_sec
+
+https://dun.163.com/news/p/22fd13c8ebd948029c68d37c3f6abdba
+
+这块自己不是很清楚，所以需要好好看下。
+
 
 
 目前没有提供生产环境容器化部署的脚本
