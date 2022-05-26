@@ -485,23 +485,87 @@ caa_container_of() 可用于在查找后从 struct cds_lfht_node 获取结构。
 
 Ubuntu 20.04.4 LTS
 
+gcc版本：9.4.0（系统自带）
+
+g++版本：9.4.0（系统自带）
+
+安装下libnetfilter-queue-dev、libpcap-dev库，然后就可以直接编译。
+
 
 
 # 三、DPI功能
 
-## 3、1 数据源
+## 3、1 数据捕获
 
 DPI分析的网络流量从何而来？主要有三种方式
 
-1、pcap包 -p
+![image-20220526162247592](picture/image-20220526162247592.png)
 
-2、netfilter_queue
 
-3、ring环 TODO： 重点看了前两者，此处没细看。
 
-切换到容器的命名空间，设置netfilter_queue相关的设置
+### 3、1、1 standalone模式
 
-好处：同一个pod上不同的container上的操作。 TODO
+standalone模式，是从网络接口进行接收数据。
+
+dp_data_add_tap
+
+“/proc/1/ns/net” 加入到这个网络命名空间，有什么好处？TODO:，是不是可以看到全局的网络信息。
+
+ 进入“/proc/1/ns/net”网络命名空间后，使用AF_PACKET raw原始套接字进行抓包。
+
+
+
+
+
+### 3、1、2 pcap模式
+
+ -p 打开pcap文件或目录下的pcap文件
+
+
+
+### 3、1、3 netfilter_queue模式
+
+netfilter_queue netfilter提供的一种机制，可将数据包从内核态拷贝到用户态进行裁决。
+
+dp程序单独启动时，无法指定netfilter_queue模式，需要agent传递dp任务参数。
+
+
+
+### 3、1、4 共享内存模式
+
+
+
+```go
+{	
+		dpi_setup(&g_callback, &g_config);
+
+        g_shm = get_shm(sizeof(dp_mnt_shm_t));
+        if (g_shm == NULL) {
+            DEBUG_INIT("Unable to get shared memory.\n");
+            return -1;
+        }
+
+        // Start
+        int ret = net_run(g_in_iface);
+
+        munmap(g_shm, sizeof(dp_mnt_shm_t));
+
+        return ret;
+}
+```
+
+dp_mnt_shm_t结构体如下：
+
+```
+typedef struct dp_mnt_shm_ {
+    uint32_t dp_hb[MAX_DP_THREADS];
+	bool dp_active[MAX_DP_THREADS];
+} dp_mnt_shm_t;
+```
+
+dp_hb:心跳包，dp和agent之间的心跳包。
+
+dp_active:dp是否存活。
 
 
 
@@ -883,6 +947,8 @@ rcu_map_del(&th_session4_map, s);
 
 ### 3、5、3 proxymesh会话管理
 
+TODO： 为什么要有proxymesh会话管理？
+
 
 
 ## 3、6 meter仪表盘功能
@@ -913,13 +979,12 @@ void dpi_meter_session_dec(dpi_session_t *s);
 bool dpi_meter_session_rate(uint8_t type, dpi_session_t *s);
 ```
 
-meter仪表盘数据统计的维度有以上三种：
+meter仪表盘上，数据统计的维度有以下三种：
 
-1、数据包情况
+1. 数据包情况
+2. 会话情况
 
-2、会话情况
-
-3、synflood泛洪情况
+3. synflood泛洪情况
 
 
 
@@ -1056,7 +1121,7 @@ dpi_set_action(p, DPI_ACTION_DROP);
 
 
 
-在使用tc模式阻断时，记录微隔离的记录日志。
+在使用tc模式阻断时，dp负责记录微隔离的记录日志。
 
 # 八、策略管理
 
@@ -1132,9 +1197,7 @@ ingress 和 egress是如何来处理的，\#define DPI_PKT_FLAG_INGRESS    0x000
 
 # 参考资料：
 
-proxymesh是对应什么场景？需要补充下proxy mesh的知识
-
-
+proxymesh是对应什么场景？需要补充下proxy mesh的知识TODO：
 
 
 
@@ -1159,13 +1222,3 @@ https://www.cnblogs.com/rancherlabs/p/16111452.html
 **开源软件的产品分析**
 
 https://kubesphere.io/zh/blogs/neuvector-cloud-native-security/
-
-
-
-学习 和 监督
-
-抓包上区分不大。
-
-
-
-保护模式才有vin和vex vbr vth
