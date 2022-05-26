@@ -95,6 +95,10 @@ chunk
 
 
 
+抓包技术那块，我是好好研究过的，所以交给我没问题。
+
+
+
 # 一、基础概念
 
 ## 1） 架构解析
@@ -472,6 +476,14 @@ struct cds_lfht_node 可以作为字段嵌入到结构中。
 
 caa_container_of() 可用于在查找后从 struct cds_lfht_node 获取结构。
 嵌入它的结构通常保存对象的key键（或键值对）。调用者代码负责计算 cds_lfht API 的哈希值。
+
+
+
+## 2、5 dp源代码编译
+
+编译环境：
+
+Ubuntu 20.04.4 LTS
 
 
 
@@ -1042,6 +1054,10 @@ dpi_set_action(p, DPI_ACTION_DROP);
 
 对于中间会话的拒绝，保留会话以阻止之后的流量。（没毛病，老铁）
 
+
+
+在使用tc模式阻断时，记录微隔离的记录日志。
+
 # 八、策略管理
 
 NeuVector 通过组的方式对容器和主机进行管理，对组进行合规性检查、网络规则、进程和文件访问规则、DLP/WAF 的检测配置。
@@ -1143,3 +1159,13 @@ https://www.cnblogs.com/rancherlabs/p/16111452.html
 **开源软件的产品分析**
 
 https://kubesphere.io/zh/blogs/neuvector-cloud-native-security/
+
+
+
+学习 和 监督
+
+抓包上区分不大。
+
+
+
+保护模式才有vin和vex vbr vth
