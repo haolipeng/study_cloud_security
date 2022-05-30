@@ -92,9 +92,63 @@
 
 编写好的Pattern可以点击右侧的"TEST"按钮进行测试。
 
-context上下文支持packet、url、header、body。
+context上下文支持packet、url、header、body。（TODO：有可能不止四种）
 
 ![image-20220512134310214](picture/image-20220512134310214.png)
+
+waf的规则如何来？
+
+1、crd是什么？
+
+在k8s中pod、node、service都是一种内置资源对象，crd = custom resource define。
+
+kubectl get pod
+
+kubectl get rules
+
+
+
+1、语法
+
+2、范围 局部 全局
+
+3、角色和角色绑定
+
+
+
+- 在应用程序开发期间定义安全策略，推向生产环境。
+- 在投入生产之前，使用 NeuVector 了解行为并导出 CRD 以供审查。
+- 将安全策略从暂存集群迁移到生产集群。
+- 在多云、多集群、混合云中复制规则。
+- 执行全局安全政策。
+
+
+
+支持的资源类型
+
+NvSecurityRule
+
+NvClusterSecurityRule
+
+两种资源的区别就是边界不同。NvSecurityRule 资源的范围在命名空间级别，NvClusterSecurityRule 的范围是集群级别的。任何一种资源类型都可以在 yaml 文件中配置，并且可以在部署期间创建。
+
+
+
+一般来说，crd的规则的制定者会公布crd的语法是什么
+
+https://open-docs.neuvector.com/policy/usingcrd#crd-policy-rules-syntax-and-semantics
+
+
+
+使用CRD的RBAC支持
+
+
+
+参考链接
+
+https://open-docs.neuvector.com/policy/usingcrd
+
+https://open-docs.neuvector.com/policy/dlp
 
 
 
