@@ -11,6 +11,16 @@ type tcPortInfo struct {
 
 idx是在enforcer网络命名空间中的端口索引
 
+问题：Neuvector的微隔离功能是否依赖于dp组件？
+
+问题：微隔离的原理到底是如何实现的？
+
+问题：SA和DA是什么？
+
+
+
+
+
 # 一、现象
 
 ## 1、1 enforcer容器接口情况
@@ -384,8 +394,6 @@ service mesh服务网格是通过iptables queue实现去进行微隔离的。
 
 
 所有前端web api的处理都在rest.go文件。
-
-疑问：SA和DA是什么？
 
 
 
