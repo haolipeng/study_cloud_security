@@ -324,6 +324,25 @@ dp_ctrl_send_json：将 json 消息作为响应发送到客户端套接字。
 
 dp_ctrl_send_binary:将二进制消息作为响应发送到客户端套接字。
 
+### 2、2、3 策略相关数据结构
+
+```go
+typedef struct dpi_policy_desc_ {
+    uint32_t id;
+    uint8_t action;
+    uint8_t flags;
+#define POLICY_DESC_CHECK_VER      0x01	//校验版本
+#define POLICY_DESC_INTERNAL       0x02 //内部
+#define POLICY_DESC_EXTERNAL       0x04	//外部
+#define POLICY_DESC_TUNNEL         0x08	//隧道
+#define POLICY_DESC_UNKNOWN_IP     0x10	//未知ip
+#define POLICY_DESC_SVC_EXTIP      0x20	//service服务ip
+#define POLICY_DESC_HOSTIP         0x40	//主机ip
+    uint16_t hdl_ver;
+    uint32_t order;
+} dpi_policy_desc_t;
+```
+
 
 
 ## 2、3 线程模型剖析
@@ -569,6 +588,121 @@ dp_active:dp是否存活。
 
 
 
+创建了AF_PACKET类型的原始套接字
+
+```
+int fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+```
+
+
+
+```
+// Discard malformed packets 丢弃格式错误的数据包
+setsockopt(fd, SOL_PACKET, PACKET_LOSS, &enable, sizeof(enable));
+
+// Packet truncated indication 数据包截断提示
+setsockopt(fd, SOL_PACKET, PACKET_COPY_THRESH, &enable, sizeof(enable));
+```
+
+
+
+数据结构
+
+```
+struct tpacket_req {
+	unsigned int	tp_block_size;	/* Minimal size of contiguous block */
+	unsigned int	tp_block_nr;	/* Number of blocks */
+	unsigned int	tp_frame_size;	/* Size of frame */
+	unsigned int	tp_frame_nr;	/* Total number of frames */
+};
+```
+
+
+
+分配环形缓冲区PACKET_RX_RING和PACKET_TX_RING
+
+```
+setsockopt(fd, SOL_PACKET, PACKET_RX_RING, req, sizeof(*req));//Capture process
+if (!tap) {
+	setsockopt(fd, SOL_PACKET, PACKET_TX_RING, req, sizeof(*req));//Transmission process
+}
+```
+
+最重要的参数是req参数，这个参数有以下结构：
+
+```
+struct tpacket_req
+    {
+        unsigned int    tp_block_size;  /* Minimal size of contiguous block */
+        unsigned int    tp_block_nr;    /* Number of blocks */
+        unsigned int    tp_frame_size;  /* Size of frame */
+        unsigned int    tp_frame_nr;    /* Total number of frames */
+    };
+```
+
+
+
+TODO：为啥tap设备不分配PACKET_TX_RING类型的环形缓冲区呢？
+
+
+
+将环形缓冲区映射到用户进程（用户进程可直接访问）
+
+```
+ring->rx_map = mmap(NULL, ring->map_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_LOCKED, fd, 0);
+```
+
+ring->map_size大小是4194304
+
+
+
+```
+ring->tx_map = ring->rx_map + ring->size;
+
+ring->rx = dp_rx_v1;
+ring->tx = dp_tx_v1;
+```
+
+设置其数据包接收函数为dp_rx_v1，数据包发送桉树为dp_tx_v1。
+
+注册的回调函数rx的调用堆栈为：
+
+dp_rx(ring.c)
+
+​	dp_data_thr (pkt.c)
+
+​		net_run (main.c)
+​        	main (main.c)
+
+
+
+bind函数
+
+bind() 将套接字关联到网络接口，这要归功于 struct sockaddr_ll 结构体的 sll_ifindex 参数。
+
+```
+static int dp_ring_bind(int fd, const char *iface)
+{
+    struct sockaddr_ll ll;
+    memset(&ll, 0, sizeof(ll));
+    ll.sll_family = PF_PACKET;
+    ll.sll_protocol = htons(ETH_P_ALL);
+    ll.sll_ifindex = if_nametoindex(iface);
+    ll.sll_hatype = 0;
+    ll.sll_pkttype = 0;
+    ll.sll_halen = 0;
+
+	//绑定操作
+    return bind(fd, (struct sockaddr *)&ll, sizeof(ll));
+}
+```
+
+
+
+参考链接
+
+https://www.kernel.org/doc/Documentation/networking/packet_mmap.txt
+
 ## 3、2 网络协议解析
 
 dpi_parse_ethernet()
@@ -578,6 +712,12 @@ dpi_parse_packet() 解析以太网，判断下一层是否是ip协议
 dpi_parse_ipv4() 解析ip协议，判断下一层是否是tcp协议
 
 dpi_parse_tcp()解析tcp协议
+
+
+
+ether_aton_r函数
+
+Convert ASCII string S to 48 bit Ethernet address 将字符串转换为48位的以太网地址
 
 **1）以太网协议解析**
 
@@ -1102,7 +1242,7 @@ void dpi_inject_reset(dpi_packet_t *p, bool to_server)
 }
 ```
 
-同时向客户端和服务器都发送reset数据包。
+dpi_inject_reset_by_session函数是在构造rst包，并且同时向客户端和服务器都发送reset数据包。
 
 
 
@@ -1117,13 +1257,23 @@ p->session->action = DPI_ACTION_BLOCK;
 dpi_set_action(p, DPI_ACTION_DROP);
 ```
 
-对于中间会话的拒绝，保留会话以阻止之后的流量。（没毛病，老铁）
+对于中间会话的拒绝，保留会话以阻止之后的流量。
+
+p->action = DPI_ACTION_DROP
+
+p->session->action = DPI_ACTION_BLOCK
+
+分为这两种情况。
 
 
 
 在使用tc模式阻断时，dp负责记录微隔离的记录日志。
 
 # 八、策略管理
+
+
+
+
 
 NeuVector 通过组的方式对容器和主机进行管理，对组进行合规性检查、网络规则、进程和文件访问规则、DLP/WAF 的检测配置。
 
@@ -1194,6 +1344,8 @@ ingress 和 egress是如何来处理的，\#define DPI_PKT_FLAG_INGRESS    0x000
 
 
 
+
+如何判断是tap设备，这块也是我需要好好理解的。
 
 # 参考资料：
 
