@@ -763,9 +763,11 @@ dp_active:dp是否存活。
 
 ### 3、1、5 原始套接字抓包
 
+新版的libpcap以及suricata都采用的此种抓包方式。
+
 #### 1、创建套接字(AF_PACKET）
 
-```
+```c
 int fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
 ```
 
@@ -773,7 +775,7 @@ int fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
 
 #### 2、设置套接字属性
 
-```
+```c
 // Discard malformed packets 丢弃格式错误的数据包
 setsockopt(fd, SOL_PACKET, PACKET_LOSS, &enable, sizeof(enable));
 
@@ -787,7 +789,7 @@ setsockopt(fd, SOL_PACKET, PACKET_COPY_THRESH, &enable, sizeof(enable));
 
 包括这两种类型：PACKET_RX_RING和PACKET_TX_RING
 
-```
+```c
 setsockopt(fd, SOL_PACKET, PACKET_RX_RING, req, sizeof(*req));//Capture process
 if (!tap) {
 	setsockopt(fd, SOL_PACKET, PACKET_TX_RING, req, sizeof(*req));//Transmission process
@@ -796,7 +798,7 @@ if (!tap) {
 
 最重要的参数是req参数，这个参数有以下结构：
 
-```
+```c
 struct tpacket_req
     {
         unsigned int    tp_block_size;  /* Minimal size of contiguous block */
@@ -812,7 +814,7 @@ struct tpacket_req
 
 #### 4、将环形缓冲区映射到用户进程
 
-```
+```c
 ring->rx_map = mmap(NULL, ring->map_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_LOCKED, fd, 0);
 ```
 
@@ -820,7 +822,7 @@ ring->map_size大小代码中设置的是4194304
 
 
 
-```
+```c
 ring->tx_map = ring->rx_map + ring->size;
 
 ring->rx = dp_rx_v1;
@@ -1534,7 +1536,53 @@ void dp_ctrl_loop(void)
 }
 ```
 
-dp_ctrl_loop函数中使用select网络模型监听可读事件，有可读事件时调用dp_ctrl_handler
+dp_ctrl_loop函数是agent和dp之间通信交互的通道。
+
+创建了g_ctrl_fd和g_ctrl_notify_fd文件描述符。
+
+g_ctrl_fd：agent和dp之间的控制通道。
+
+g_ctrl_notify_fd：agent和dp之间的通知通道。
+
+
+
+```
+g_ctrl_fd = make_named_socket(DP_SERVER_SOCK);
+g_ctrl_notify_fd = make_notify_client(CTRL_NOTIFY_SOCK);
+```
+
+```
+static int make_named_socket(const char *filename)
+{
+    struct sockaddr_un name;
+    int sock;
+    size_t size;
+
+    sock = socket(PF_UNIX, SOCK_DGRAM, 0);
+    if (sock < 0) {
+        return -1;
+    }
+
+    name.sun_family = AF_UNIX;
+    strlcpy(name.sun_path, filename, sizeof(name.sun_path));
+
+    size = (offsetof(struct sockaddr_un, sun_path) + strlen(name.sun_path));
+
+    if (bind(sock, (struct sockaddr *)&name, size) < 0) {
+        return -1;
+    }
+
+    return sock;
+}
+```
+
+从make_named_socket函数可知，g_ctrl_fd是Unix Domain套接字，路径为DP_SERVER_SOCK 
+
+#define DP_SERVER_SOCK "/tmp/dp_listen.sock"
+
+
+
+使用select网络模型监听g_ctrl_fd可读事件，有可读事件时调用dp_ctrl_handler
 
 ```
 static int dp_ctrl_handler(int fd)
@@ -1560,9 +1608,11 @@ static int dp_ctrl_handler(int fd)
 
 基于epoll的事件驱动模型。和libevent的基于事件的驱动模型是几乎一模一样的。
 
-从ring读取，ring是哪里来的,共享内存是干什么?
 
-ingress 和 egress是如何来处理的，\#define DPI_PKT_FLAG_INGRESS    0x00000100宏是如何发挥作用的
+
+ingress 和 egress是如何来处理的，
+
+\#define DPI_PKT_FLAG_INGRESS    0x00000100宏是如何发挥作用的
 
 这几块的代码也看了，但是文字方面并没有补，因为逻辑上比较复杂，所以考虑绘制下状态图来梳理下思路。
 
