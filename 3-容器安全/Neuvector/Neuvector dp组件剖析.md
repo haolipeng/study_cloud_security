@@ -236,7 +236,82 @@ meter是仪表盘，用于统计程序运行过程中的数据。
 
 ## 2、2 核心数据结构
 
-### 2、2、1 dpi_session_t会话结构体
+### 2、2、1 dpi_packet_t数据包结构体
+
+```
+typedef struct dpi_packet_ {
+    uint8_t *pkt;
+
+    struct ip6_frag *ip6_fragh;
+
+    uint32_t flags;
+
+    struct dpi_session_ *session;
+    struct dpi_wing_ *this_wing, *that_wing;
+
+    uint16_t l2;
+    uint16_t l3;
+    uint16_t l4;
+    uint16_t cap_len;
+    uint16_t len;
+    uint16_t eth_type;
+    uint16_t sport, dport;
+    uint8_t ip_proto;
+
+    uint8_t tcp_wscale;
+    uint16_t tcp_mss;
+    uint32_t tcp_ts_value, tcp_ts_echo;
+
+    uint32_t threat_id;
+    uint8_t action:   3,
+            severity: 3;  // record packet threat severity when session is not located, ex. ping death
+    uint8_t pad[3];
+
+    void *frag_trac;
+    void *cached_clip;
+
+    uint32_t EOZ;
+
+    uint64_t id;
+    struct dpi_parser_ *cur_parser;//当前解析器
+    buf_t *pkt_buffer;
+    buf_t raw;
+    buf_t asm_pkt;
+    uint8_t *defrag_data;
+    uint32_t asm_seq, parser_asm_seq; // cache asm_seq during protocol parsing
+
+    io_ctx_t *ctx;
+    io_ep_t *ep;
+    uint8_t *ep_mac;
+    io_stats_t *ep_stats;
+    io_metry_t *ep_all_metry;
+    io_metry_t *ep_app_metry;
+    io_stats_t *stats;
+    io_metry_t *all_metry;
+    io_metry_t *app_metry;
+
+    uint8_t parser_left;
+    /*dlp related*/
+    uint32_t dlp_match_seq;
+    dpi_sig_context_type_t dlp_match_type;
+    dpi_sig_context_type_t dlp_pat_context;
+    uint8_t dlp_match_flags;
+    dpi_dlp_area_t dlp_area[DPI_SIG_CONTEXT_TYPE_MAX];
+    buf_t decoded_pkt;
+
+    uint8_t dlp_candidates_overflow;
+    uint8_t has_dlp_candidates;
+
+    int dlp_results;
+    int dlp_candidates;
+    dpi_match_t dlp_match_results[DPI_MAX_MATCH_RESULT];
+    dpi_match_candidate_t dlp_match_candidates[DPI_MAX_MATCH_CANDIDATE];
+} dpi_packet_t;
+```
+
+
+
+### 2、2、2 dpi_session_t会话结构体
 
 ```go
 typedef struct dpi_session_ {
@@ -321,7 +396,7 @@ typedef struct dpi_wing_ {
 
 
 
-### 2、2、2 io_callback_ io通信结构体
+### 2、2、3 io_callback_ io通信结构体
 
 ```
 typedef struct io_callback_ {
@@ -376,7 +451,7 @@ dp_ctrl_send_json：将 json 消息作为响应发送到客户端套接字。
 
 dp_ctrl_send_binary:将二进制消息作为响应发送到客户端套接字。
 
-### 2、2、3 策略相关数据结构
+### 2、2、4 策略相关数据结构
 
 #### 1）规则dpi_rule_t
 
@@ -731,6 +806,8 @@ struct tpacket_req
     };
 ```
 
+具体参数含义，查
+
 
 
 #### 4、将环形缓冲区映射到用户进程
@@ -962,6 +1039,69 @@ dpi_pkt_proto_parser
 ​		dpi_proto_parser
 
 ​				cp->parser(p);
+
+```
+void dpi_proto_parser(dpi_packet_t *p)
+{
+    dpi_session_t *s = p->session;
+    dpi_parser_t **list = get_parser_list(p->ip_proto), *cp;
+
+    //已重组的数据包
+    if (p->flags & DPI_PKT_FLAG_ASSEMBLED) {
+        p->pkt_buffer = &p->asm_pkt;
+    }
+
+    //会话有唯一的解析器
+    if (s->flags & DPI_SESS_FLAG_ONLY_PARSER) {
+        cp = p->cur_parser = list[s->only_parser];
+        if (cp != NULL && cp->parser != NULL) {
+            cp->parser(p);//调用解析器
+
+            if (!BITMASK_TEST(s->parser_bits, s->only_parser)) {
+                DEBUG_LOG(DBG_SESSION, p, "sess %u: skip parser\n", s->id);
+                dpi_delete_parser_data(s, cp);
+                s->flags |= DPI_SESS_FLAG_SKIP_PARSER;
+                s->flags &= ~DPI_SESS_FLAG_ONLY_PARSER;
+                s->flags |= DPI_SESS_FLAG_POLICY_APP_READY;
+            }
+        }
+    } else {
+        // Walk through all parsers
+        p->parser_left = 0;
+        for (t = 0; t < DPI_PARSER_MAX; t ++) {
+            cp = p->cur_parser = list[t];
+            if (cp != NULL && cp->parser != NULL && BITMASK_TEST(s->parser_bits, t)) {
+                cp->parser(p);//调用解析器
+
+                if (BITMASK_TEST(s->parser_bits, t)) {
+                    p->parser_left ++;
+                    last = t;
+                } else {
+                    dpi_delete_parser_data(s, cp);//删除解析器数据
+                }
+            }
+        }
+
+        switch (p->parser_left) {
+        case 0:
+            // Session can still be finalized (protocol recognized) when we reach here - the
+            // parser confirms the session type but is not interested in the session any more.
+            s->flags |= DPI_SESS_FLAG_SKIP_PARSER; //找不到合适的解析器，则会跳过解析过程
+            s->flags |= DPI_SESS_FLAG_POLICY_APP_READY;
+            break;
+        case 1:
+            s->flags |= DPI_SESS_FLAG_LAST_PARSER; //标记最后一个解析器
+            s->only_parser = last;
+            break;
+        }
+    }
+
+    //将p->pkt_buffer 置为 &p->raw;
+    if (p->flags & DPI_PKT_FLAG_ASSEMBLED) {
+        p->pkt_buffer = &p->raw;
+    }
+}
+```
 
 
 
@@ -1356,9 +1496,7 @@ p->session->action = DPI_ACTION_BLOCK
 
 在使用tc模式阻断时，dp负责记录微隔离的记录日志。
 
-# 八、策略管理
-
-
+# 八、agent和dp策略下发及响应
 
 
 
@@ -1427,8 +1565,6 @@ static int dp_ctrl_handler(int fd)
 ingress 和 egress是如何来处理的，\#define DPI_PKT_FLAG_INGRESS    0x00000100宏是如何发挥作用的
 
 这几块的代码也看了，但是文字方面并没有补，因为逻辑上比较复杂，所以考虑绘制下状态图来梳理下思路。
-
-
 
 
 
