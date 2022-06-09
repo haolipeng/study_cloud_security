@@ -8,7 +8,7 @@
 
 
 
-2、Neuvector支持哪些协议的解析？（TODO：可加协议识别引擎）
+2、Neuvector支持哪些协议的解析？
 
 NeuVector 深度了解应用程序行为，并将分析有效负载，以确定应用程序协议。协议包括：
 
@@ -103,8 +103,6 @@ chunk
 
 ## 1） 架构解析
 
-<img src="picture/640.png" alt="图片" style="zoom:67%;" />
-
 NeuVector 本身包含 Controller、Enforcer、Manager、Scanner 和 Updater 模块。 
 
 - Controller ：整个 NeuVector 的控制模块，API 入口，包括配置下发，高可用主要考虑 Controller 的 HA ，通常建议部署 3 个 Controller 模块组成集群。
@@ -117,7 +115,53 @@ NeuVector 本身包含 Controller、Enforcer、Manager、Scanner 和 Updater 模
 
 ## 2）组 Groups
 
+**1、自动删除未使用的组**
 
+如果组中没有成员（容器），NeuVector 会自动删除学习到的组（不是保留或自定义组）。
+
+**2、主机保护 - “节点”组**
+
+NeuVector 自动创建一个名为“nodes”的组，它代表集群中的每个节点（主机）。
+
+NeuVector 为主机上的可疑进程和提权提供自动监控（例如端口扫描、反向 shell 等）。
+
+此外，NeuVector 将在发现模式下学习每个节点的进程行为，以将这些进程列入白名单，和容器进程的处理方式类似。
+
+**3、自定义组**
+
+可以通过输入组的条件手动添加组。note：自定义组没有保护模式，因为它可能包含很多不同组的容器，每个容器都可能处于不同的模式，从而导致对行为的混淆。
+
+可以通过以下方式创建组：
+
+**Images**
+
+​	按照镜像名称选择容器，Examples: image=wordpress, image@redis
+
+**Nodes**
+
+​	按运行容器的节点选择容器。Examples: node=ip-12-34-56-78.us-west-2
+
+**Individual** **containers**独立容器
+
+​	按实例名称选择容器。Examples: container=nodejs_1, container@nodejs
+
+**Services**
+
+​	按服务来选择容器。如果容器由 Docker Compose 部署，其服务标签值为“project_name:service_name”；如果一个容器是由 Docker swarm模式部署的service，那么它的 service tag 值就是 swarm 服务名。TODO：看来ddocker Compose和Docker swarm还是需要多熟悉下。
+
+**Labels**
+
+​	按标签来选择容器，Examples: com.docker.compose.project=wordpress, location@us-west
+
+**Addresses**
+
+​	按 DNS 名称或 IP 地址范围创建组。Examples: address=www.google.com, address=10.1.0.1, address=10.1.0.0/24, address=10.1.0.1-10.1.0.25.
+
+​	DNS 名称可以是任何可解析的名称。地址条件不接受 != 运算符。
+
+
+
+可以使用混合条件类型创建组，但“地址”类型除外，它不能与其他条件一起使用。
 
 
 
@@ -192,7 +236,7 @@ meter是仪表盘，用于统计程序运行过程中的数据。
 
 ## 2、2 核心数据结构
 
-### 2、2、1 会话结构体
+### 2、2、1 dpi_session_t会话结构体
 
 ```go
 typedef struct dpi_session_ {
@@ -210,7 +254,7 @@ typedef struct dpi_session_ {
     uint16_t flags;
     uint8_t tick_flags :4,
             meter_flags:4;
-    uint8_t only_parser;
+    uint8_t only_parser; //唯一的解析器
 
     uint32_t small_window_tick; // small window size start tick
 
@@ -252,7 +296,7 @@ typedef struct dpi_wing_ {
     uint16_t port;//端口
     io_ip_t ip;//ip地址
     uint32_t next_seq, init_seq;//init_seq初始化，next_seq下一个序列号
-    uint32_t asm_seq;//TODO:
+    uint32_t asm_seq;//TODO:asm_seq到底是什么作用？
 
     union {
         struct {
@@ -277,7 +321,7 @@ typedef struct dpi_wing_ {
 
 
 
-### 2、2、2 io通信结构体
+### 2、2、2 io_callback_ io通信结构体
 
 ```
 typedef struct io_callback_ {
@@ -290,6 +334,14 @@ typedef struct io_callback_ {
     int (*connect_report) (DPMsgSession *log, int count_session, int count_violate);
 } io_callback_t;
 ```
+
+threat_log：威胁日志
+
+traffic_log：流量日志
+
+connect_report:连接上报
+
+
 
 其赋值处有很多，以standalone模式举例
 
@@ -326,6 +378,22 @@ dp_ctrl_send_binary:将二进制消息作为响应发送到客户端套接字。
 
 ### 2、2、3 策略相关数据结构
 
+#### 1）规则dpi_rule_t
+
+```
+typedef struct dpi_rule_ {
+    struct cds_lfht_node node;
+    dpi_policy_desc_t desc;
+    dpi_rule_key_t key;
+} dpi_rule_t;
+```
+
+key代表查找的key，desc代表的是策略的描述。
+
+
+
+#### 2）dpi_policy_desc_t策略描述
+
 ```go
 typedef struct dpi_policy_desc_ {
     uint32_t id;
@@ -345,6 +413,34 @@ typedef struct dpi_policy_desc_ {
 
 
 
+#### 3）dpi_rule_key_t 策略key
+
+规则key详情如下：
+
+```
+typedef struct dpi_rule_key_ {
+    uint32_t sip;//源ip
+    uint32_t dip//目的ip
+    uint16_t dport;//目的端口
+    uint16_t proto;//协议号
+    uint32_t app;//应用
+} dpi_rule_key_t;
+```
+
+
+
+策略的方向分为EGRESS和INGRESS
+
+```
+enum {
+    POLICY_RULE_DIR_EGRESS,
+    POLICY_RULE_DIR_INGRESS,
+    POLICY_RULE_DIR_NONE,
+};
+```
+
+
+
 ## 2、3 线程模型剖析
 
 多线程并发结构体，如下：
@@ -360,7 +456,7 @@ typedef struct dpi_policy_desc_ {
 #define th_session4_proxymesh_map (g_dpi_thread_data[THREAD_ID].session4_proxymesh_map)
 ```
 
-g_dpi_thread_data[THREAD_ID].xxxxx代表每个线程都有属于自己的资源，如会话表、分片表，数据包、状态记录等。
+g_dpi_thread_data[THREAD_ID].xxxxx，其中xxxxx代表每个线程都有属于自己的资源，如会话表、分片表，数据包、状态记录等。
 
 
 
@@ -405,7 +501,7 @@ static int net_run(const char *in_iface)
 
 timer_thr线程：用于更新全局时间g_seconds的线程
 
-bld_dlp_thr线程：
+bld_dlp_thr线程：用于数据防泄露dlp的线程
 
 dp_thr[i]线程：用于收包的线程，创建了g_dp_threads个dp_thr线程，只有一个线程去更新全局统计计数。
 
@@ -510,6 +606,8 @@ g++版本：9.4.0（系统自带）
 
 安装下libnetfilter-queue-dev、libpcap-dev库，然后就可以直接编译。
 
+在ubuntu 20.04.4的原生环境下，可以直接编译成功，并进行GDB调试。
+
 
 
 # 三、DPI功能
@@ -528,11 +626,11 @@ standalone模式，是从网络接口进行接收数据。
 
 dp_data_add_tap
 
-“/proc/1/ns/net” 加入到这个网络命名空间，有什么好处？TODO:，是不是可以看到全局的网络信息。
+“/proc/1/ns/net” 加入到这个网络命名空间，有什么好处？
+
+答：“/proc/1/ns/net”是主机的网络命名空间，进程进入此命名空间后，可看到宿主机上的全部网络信息。
 
  进入“/proc/1/ns/net”网络命名空间后，使用AF_PACKET raw原始套接字进行抓包。
-
-
 
 
 
@@ -552,7 +650,7 @@ dp程序单独启动时，无法指定netfilter_queue模式，需要agent传递d
 
 ### 3、1、4 共享内存模式
 
-
+共享内存模式和standalone模式是差不多的。
 
 ```go
 {	
@@ -588,13 +686,17 @@ dp_active:dp是否存活。
 
 
 
-创建了AF_PACKET类型的原始套接字
+### 3、1、5 原始套接字抓包
+
+#### 1、创建套接字(AF_PACKET）
 
 ```
 int fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
 ```
 
 
+
+#### 2、设置套接字属性
 
 ```
 // Discard malformed packets 丢弃格式错误的数据包
@@ -606,20 +708,9 @@ setsockopt(fd, SOL_PACKET, PACKET_COPY_THRESH, &enable, sizeof(enable));
 
 
 
-数据结构
+#### 3、分配环形缓冲区
 
-```
-struct tpacket_req {
-	unsigned int	tp_block_size;	/* Minimal size of contiguous block */
-	unsigned int	tp_block_nr;	/* Number of blocks */
-	unsigned int	tp_frame_size;	/* Size of frame */
-	unsigned int	tp_frame_nr;	/* Total number of frames */
-};
-```
-
-
-
-分配环形缓冲区PACKET_RX_RING和PACKET_TX_RING
+包括这两种类型：PACKET_RX_RING和PACKET_TX_RING
 
 ```
 setsockopt(fd, SOL_PACKET, PACKET_RX_RING, req, sizeof(*req));//Capture process
@@ -642,17 +733,13 @@ struct tpacket_req
 
 
 
-TODO：为啥tap设备不分配PACKET_TX_RING类型的环形缓冲区呢？
-
-
-
-将环形缓冲区映射到用户进程（用户进程可直接访问）
+#### 4、将环形缓冲区映射到用户进程
 
 ```
 ring->rx_map = mmap(NULL, ring->map_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_LOCKED, fd, 0);
 ```
 
-ring->map_size大小是4194304
+ring->map_size大小代码中设置的是4194304
 
 
 
@@ -676,7 +763,7 @@ dp_rx(ring.c)
 
 
 
-bind函数
+#### 5、将传输套接字与网络接口绑定
 
 bind() 将套接字关联到网络接口，这要归功于 struct sockaddr_ll 结构体的 sll_ifindex 参数。
 
@@ -840,9 +927,7 @@ static dpi_parser_t **get_parser_list(int ip_proto)
 
 解析器大致分为三类，全局tcp解析器，全局udp解析器，任意协议的解析器。
 
-解析器的类型parser->type是何时赋值的呢？
-
-TODO：这里画一张图，补下协议解析树的流程。
+解析器的类型parser->type是何时赋值的呢？（在每个应用层协议的结构体初始化中）
 
 
 
@@ -931,6 +1016,8 @@ void dpi_frag_init(void)
                  ip4frag_trac_match, ip4frag_trac_hash);
 }
 ```
+
+
 
 **查找和添加**
 
