@@ -12,9 +12,15 @@ https://mp.weixin.qq.com/s?src=11&timestamp=1654913607&ver=3853&signature=4tPT2*
 
 https://blog.spoock.com/2019/07/06/ss-learn/
 
+
+
 官网代码地址
 
 https://github.com/shemminger/iproute2
+
+
+
+以源代码编译后进行gdb调试，已搞定。
 
 
 
@@ -47,6 +53,10 @@ ss -anup | grep 9998
 以上代码我全部gdb过，流程上是绝对保证没问题的。
 
 # 二、ss命令获取udp/tcp连接状态
+
+![image-20220612112245569](picture/image-20220612112245569.png)
+
+
 
 显示udp状态的入口函数为udp_show
 
