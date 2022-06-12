@@ -207,3 +207,48 @@ kubectl exec client -n ping -- curl -F "s=OK" -F "user=bob" -F "passwd=foobar" -
 helm upgrade falco falcosecurity/falco -f custom_rules.yaml -n falco
 ```
 
+
+
+容器安全 译文
+
+https://www.katacoda.com/falco/courses/falco/falco
+
+尽管它在使用容器时特别有用，因为它支持特定于容器的上下文，例如 container.id、container.image 或命名空间的规则。
+
+Falco 是一种审计工具，与 Seccomp 或 AppArmor 等强制工具不同。
+
+Falco 运行在用户空间，使用内核模块拦截系统调用。
+
+
+
+首先，拷贝修改后的配置文件，到/etc/falco目录
+
+```
+sudo -s
+mkdir /etc/falco
+cp falco.yaml falco_rules.yaml /etc/falco
+touch /var/log/falco_events.log
+```
+
+falco.yaml
+
+falco_rules.yaml
+
+
+
+```
+docker run -d --name falco \
+    --privileged \
+    -v /var/run/docker.sock:/host/var/run/docker.sock \
+    -v /dev:/host/dev \
+    -v /proc:/host/proc:ro \
+    -v /boot:/host/boot:ro \
+    -v /lib/modules:/host/lib/modules:ro \
+    -v /usr:/host/usr:ro \
+    -v /etc:/host/etc:ro \
+    -v /etc/falco/falco.yaml:/etc/falco/falco.yaml \
+    -v /etc/falco/falco_rules.yaml:/etc/falco/falco_rules.yaml \
+    -v /var/log/falco_events.log:/var/log/falco_events.log \
+    falcosecurity/falco:latest
+```
+

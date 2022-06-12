@@ -8,7 +8,7 @@
 
 
 
-2、Neuvector支持哪些协议的解析？（TODO：可加协议识别引擎）
+2、Neuvector支持哪些协议的解析？
 
 NeuVector 深度了解应用程序行为，并将分析有效负载，以确定应用程序协议。协议包括：
 
@@ -103,8 +103,6 @@ chunk
 
 ## 1） 架构解析
 
-<img src="picture/640.png" alt="图片" style="zoom:67%;" />
-
 NeuVector 本身包含 Controller、Enforcer、Manager、Scanner 和 Updater 模块。 
 
 - Controller ：整个 NeuVector 的控制模块，API 入口，包括配置下发，高可用主要考虑 Controller 的 HA ，通常建议部署 3 个 Controller 模块组成集群。
@@ -117,7 +115,53 @@ NeuVector 本身包含 Controller、Enforcer、Manager、Scanner 和 Updater 模
 
 ## 2）组 Groups
 
+**1、自动删除未使用的组**
 
+如果组中没有成员（容器），NeuVector 会自动删除学习到的组（不是保留或自定义组）。
+
+**2、主机保护 - “节点”组**
+
+NeuVector 自动创建一个名为“nodes”的组，它代表集群中的每个节点（主机）。
+
+NeuVector 为主机上的可疑进程和提权提供自动监控（例如端口扫描、反向 shell 等）。
+
+此外，NeuVector 将在发现模式下学习每个节点的进程行为，以将这些进程列入白名单，和容器进程的处理方式类似。
+
+**3、自定义组**
+
+可以通过输入组的条件手动添加组。note：自定义组没有保护模式，因为它可能包含很多不同组的容器，每个容器都可能处于不同的模式，从而导致对行为的混淆。
+
+可以通过以下方式创建组：
+
+**Images**
+
+​	按照镜像名称选择容器，Examples: image=wordpress, image@redis
+
+**Nodes**
+
+​	按运行容器的节点选择容器。Examples: node=ip-12-34-56-78.us-west-2
+
+**Individual** **containers**独立容器
+
+​	按实例名称选择容器。Examples: container=nodejs_1, container@nodejs
+
+**Services**
+
+​	按服务来选择容器。如果容器由 Docker Compose 部署，其服务标签值为“project_name:service_name”；如果一个容器是由 Docker swarm模式部署的service，那么它的 service tag 值就是 swarm 服务名。TODO：看来ddocker Compose和Docker swarm还是需要多熟悉下。
+
+**Labels**
+
+​	按标签来选择容器，Examples: com.docker.compose.project=wordpress, location@us-west
+
+**Addresses**
+
+​	按 DNS 名称或 IP 地址范围创建组。Examples: address=www.google.com, address=10.1.0.1, address=10.1.0.0/24, address=10.1.0.1-10.1.0.25.
+
+​	DNS 名称可以是任何可解析的名称。地址条件不接受 != 运算符。
+
+
+
+可以使用混合条件类型创建组，但“地址”类型除外，它不能与其他条件一起使用。
 
 
 
@@ -192,7 +236,82 @@ meter是仪表盘，用于统计程序运行过程中的数据。
 
 ## 2、2 核心数据结构
 
-### 2、2、1 会话结构体
+### 2、2、1 dpi_packet_t数据包结构体
+
+```
+typedef struct dpi_packet_ {
+    uint8_t *pkt;
+
+    struct ip6_frag *ip6_fragh;
+
+    uint32_t flags;
+
+    struct dpi_session_ *session;
+    struct dpi_wing_ *this_wing, *that_wing;
+
+    uint16_t l2;
+    uint16_t l3;
+    uint16_t l4;
+    uint16_t cap_len;
+    uint16_t len;
+    uint16_t eth_type;
+    uint16_t sport, dport;
+    uint8_t ip_proto;
+
+    uint8_t tcp_wscale;
+    uint16_t tcp_mss;
+    uint32_t tcp_ts_value, tcp_ts_echo;
+
+    uint32_t threat_id;
+    uint8_t action:   3,
+            severity: 3;  // record packet threat severity when session is not located, ex. ping death
+    uint8_t pad[3];
+
+    void *frag_trac;
+    void *cached_clip;
+
+    uint32_t EOZ;
+
+    uint64_t id;
+    struct dpi_parser_ *cur_parser;//当前解析器
+    buf_t *pkt_buffer;
+    buf_t raw;
+    buf_t asm_pkt;
+    uint8_t *defrag_data;
+    uint32_t asm_seq, parser_asm_seq; // cache asm_seq during protocol parsing
+
+    io_ctx_t *ctx;
+    io_ep_t *ep;
+    uint8_t *ep_mac;
+    io_stats_t *ep_stats;
+    io_metry_t *ep_all_metry;
+    io_metry_t *ep_app_metry;
+    io_stats_t *stats;
+    io_metry_t *all_metry;
+    io_metry_t *app_metry;
+
+    uint8_t parser_left;
+    /*dlp related*/
+    uint32_t dlp_match_seq;
+    dpi_sig_context_type_t dlp_match_type;
+    dpi_sig_context_type_t dlp_pat_context;
+    uint8_t dlp_match_flags;
+    dpi_dlp_area_t dlp_area[DPI_SIG_CONTEXT_TYPE_MAX];
+    buf_t decoded_pkt;
+
+    uint8_t dlp_candidates_overflow;
+    uint8_t has_dlp_candidates;
+
+    int dlp_results;
+    int dlp_candidates;
+    dpi_match_t dlp_match_results[DPI_MAX_MATCH_RESULT];
+    dpi_match_candidate_t dlp_match_candidates[DPI_MAX_MATCH_CANDIDATE];
+} dpi_packet_t;
+```
+
+
+
+### 2、2、2 dpi_session_t会话结构体
 
 ```go
 typedef struct dpi_session_ {
@@ -210,7 +329,7 @@ typedef struct dpi_session_ {
     uint16_t flags;
     uint8_t tick_flags :4,
             meter_flags:4;
-    uint8_t only_parser;
+    uint8_t only_parser; //唯一的解析器
 
     uint32_t small_window_tick; // small window size start tick
 
@@ -252,7 +371,7 @@ typedef struct dpi_wing_ {
     uint16_t port;//端口
     io_ip_t ip;//ip地址
     uint32_t next_seq, init_seq;//init_seq初始化，next_seq下一个序列号
-    uint32_t asm_seq;//TODO:
+    uint32_t asm_seq;//TODO:asm_seq到底是什么作用？
 
     union {
         struct {
@@ -277,7 +396,7 @@ typedef struct dpi_wing_ {
 
 
 
-### 2、2、2 io通信结构体
+### 2、2、3 io_callback_ io通信结构体
 
 ```
 typedef struct io_callback_ {
@@ -290,6 +409,14 @@ typedef struct io_callback_ {
     int (*connect_report) (DPMsgSession *log, int count_session, int count_violate);
 } io_callback_t;
 ```
+
+threat_log：威胁日志
+
+traffic_log：流量日志
+
+connect_report:连接上报
+
+
 
 其赋值处有很多，以standalone模式举例
 
@@ -324,6 +451,69 @@ dp_ctrl_send_json：将 json 消息作为响应发送到客户端套接字。
 
 dp_ctrl_send_binary:将二进制消息作为响应发送到客户端套接字。
 
+### 2、2、4 策略相关数据结构
+
+#### 1）规则dpi_rule_t
+
+```
+typedef struct dpi_rule_ {
+    struct cds_lfht_node node;
+    dpi_policy_desc_t desc;
+    dpi_rule_key_t key;
+} dpi_rule_t;
+```
+
+key代表查找的key，desc代表的是策略的描述。
+
+
+
+#### 2）dpi_policy_desc_t策略描述
+
+```go
+typedef struct dpi_policy_desc_ {
+    uint32_t id;
+    uint8_t action;
+    uint8_t flags;
+#define POLICY_DESC_CHECK_VER      0x01	//校验版本
+#define POLICY_DESC_INTERNAL       0x02 //内部
+#define POLICY_DESC_EXTERNAL       0x04	//外部
+#define POLICY_DESC_TUNNEL         0x08	//隧道
+#define POLICY_DESC_UNKNOWN_IP     0x10	//未知ip
+#define POLICY_DESC_SVC_EXTIP      0x20	//service服务ip
+#define POLICY_DESC_HOSTIP         0x40	//主机ip
+    uint16_t hdl_ver;
+    uint32_t order;
+} dpi_policy_desc_t;
+```
+
+
+
+#### 3）dpi_rule_key_t 策略key
+
+规则key详情如下：
+
+```
+typedef struct dpi_rule_key_ {
+    uint32_t sip;//源ip
+    uint32_t dip//目的ip
+    uint16_t dport;//目的端口
+    uint16_t proto;//协议号
+    uint32_t app;//应用
+} dpi_rule_key_t;
+```
+
+
+
+策略的方向分为EGRESS和INGRESS
+
+```
+enum {
+    POLICY_RULE_DIR_EGRESS,
+    POLICY_RULE_DIR_INGRESS,
+    POLICY_RULE_DIR_NONE,
+};
+```
+
 
 
 ## 2、3 线程模型剖析
@@ -341,7 +531,7 @@ dp_ctrl_send_binary:将二进制消息作为响应发送到客户端套接字。
 #define th_session4_proxymesh_map (g_dpi_thread_data[THREAD_ID].session4_proxymesh_map)
 ```
 
-g_dpi_thread_data[THREAD_ID].xxxxx代表每个线程都有属于自己的资源，如会话表、分片表，数据包、状态记录等。
+g_dpi_thread_data[THREAD_ID].xxxxx，其中xxxxx代表每个线程都有属于自己的资源，如会话表、分片表，数据包、状态记录等。
 
 
 
@@ -386,7 +576,7 @@ static int net_run(const char *in_iface)
 
 timer_thr线程：用于更新全局时间g_seconds的线程
 
-bld_dlp_thr线程：
+bld_dlp_thr线程：用于数据防泄露dlp的线程
 
 dp_thr[i]线程：用于收包的线程，创建了g_dp_threads个dp_thr线程，只有一个线程去更新全局统计计数。
 
@@ -491,6 +681,8 @@ g++版本：9.4.0（系统自带）
 
 安装下libnetfilter-queue-dev、libpcap-dev库，然后就可以直接编译。
 
+在ubuntu 20.04.4的原生环境下，可以直接编译成功，并进行GDB调试。
+
 
 
 # 三、DPI功能
@@ -509,11 +701,11 @@ standalone模式，是从网络接口进行接收数据。
 
 dp_data_add_tap
 
-“/proc/1/ns/net” 加入到这个网络命名空间，有什么好处？TODO:，是不是可以看到全局的网络信息。
+“/proc/1/ns/net” 加入到这个网络命名空间，有什么好处？
+
+答：“/proc/1/ns/net”是主机的网络命名空间，进程进入此命名空间后，可看到宿主机上的全部网络信息。
 
  进入“/proc/1/ns/net”网络命名空间后，使用AF_PACKET raw原始套接字进行抓包。
-
-
 
 
 
@@ -533,7 +725,7 @@ dp程序单独启动时，无法指定netfilter_queue模式，需要agent传递d
 
 ### 3、1、4 共享内存模式
 
-
+共享内存模式和standalone模式是差不多的。
 
 ```go
 {	
@@ -569,6 +761,114 @@ dp_active:dp是否存活。
 
 
 
+### 3、1、5 原始套接字抓包
+
+新版的libpcap以及suricata都采用的此种抓包方式。
+
+#### 1、创建套接字(AF_PACKET）
+
+```c
+int fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+```
+
+
+
+#### 2、设置套接字属性
+
+```c
+// Discard malformed packets 丢弃格式错误的数据包
+setsockopt(fd, SOL_PACKET, PACKET_LOSS, &enable, sizeof(enable));
+
+// Packet truncated indication 数据包截断提示
+setsockopt(fd, SOL_PACKET, PACKET_COPY_THRESH, &enable, sizeof(enable));
+```
+
+
+
+#### 3、分配环形缓冲区
+
+包括这两种类型：PACKET_RX_RING和PACKET_TX_RING
+
+```c
+setsockopt(fd, SOL_PACKET, PACKET_RX_RING, req, sizeof(*req));//Capture process
+if (!tap) {
+	setsockopt(fd, SOL_PACKET, PACKET_TX_RING, req, sizeof(*req));//Transmission process
+}
+```
+
+最重要的参数是req参数，这个参数有以下结构：
+
+```c
+struct tpacket_req
+    {
+        unsigned int    tp_block_size;  /* Minimal size of contiguous block */
+        unsigned int    tp_block_nr;    /* Number of blocks */
+        unsigned int    tp_frame_size;  /* Size of frame */
+        unsigned int    tp_frame_nr;    /* Total number of frames */
+    };
+```
+
+具体参数含义，查
+
+
+
+#### 4、将环形缓冲区映射到用户进程
+
+```c
+ring->rx_map = mmap(NULL, ring->map_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_LOCKED, fd, 0);
+```
+
+ring->map_size大小代码中设置的是4194304
+
+
+
+```c
+ring->tx_map = ring->rx_map + ring->size;
+
+ring->rx = dp_rx_v1;
+ring->tx = dp_tx_v1;
+```
+
+设置其数据包接收函数为dp_rx_v1，数据包发送桉树为dp_tx_v1。
+
+注册的回调函数rx的调用堆栈为：
+
+dp_rx(ring.c)
+
+​	dp_data_thr (pkt.c)
+
+​		net_run (main.c)
+​        	main (main.c)
+
+
+
+#### 5、将传输套接字与网络接口绑定
+
+bind() 将套接字关联到网络接口，这要归功于 struct sockaddr_ll 结构体的 sll_ifindex 参数。
+
+```
+static int dp_ring_bind(int fd, const char *iface)
+{
+    struct sockaddr_ll ll;
+    memset(&ll, 0, sizeof(ll));
+    ll.sll_family = PF_PACKET;
+    ll.sll_protocol = htons(ETH_P_ALL);
+    ll.sll_ifindex = if_nametoindex(iface);
+    ll.sll_hatype = 0;
+    ll.sll_pkttype = 0;
+    ll.sll_halen = 0;
+
+	//绑定操作
+    return bind(fd, (struct sockaddr *)&ll, sizeof(ll));
+}
+```
+
+
+
+参考链接
+
+https://www.kernel.org/doc/Documentation/networking/packet_mmap.txt
+
 ## 3、2 网络协议解析
 
 dpi_parse_ethernet()
@@ -578,6 +878,12 @@ dpi_parse_packet() 解析以太网，判断下一层是否是ip协议
 dpi_parse_ipv4() 解析ip协议，判断下一层是否是tcp协议
 
 dpi_parse_tcp()解析tcp协议
+
+
+
+ether_aton_r函数
+
+Convert ASCII string S to 48 bit Ethernet address 将字符串转换为48位的以太网地址
 
 **1）以太网协议解析**
 
@@ -700,9 +1006,7 @@ static dpi_parser_t **get_parser_list(int ip_proto)
 
 解析器大致分为三类，全局tcp解析器，全局udp解析器，任意协议的解析器。
 
-解析器的类型parser->type是何时赋值的呢？
-
-TODO：这里画一张图，补下协议解析树的流程。
+解析器的类型parser->type是何时赋值的呢？（在每个应用层协议的结构体初始化中）
 
 
 
@@ -737,6 +1041,69 @@ dpi_pkt_proto_parser
 ​		dpi_proto_parser
 
 ​				cp->parser(p);
+
+```
+void dpi_proto_parser(dpi_packet_t *p)
+{
+    dpi_session_t *s = p->session;
+    dpi_parser_t **list = get_parser_list(p->ip_proto), *cp;
+
+    //已重组的数据包
+    if (p->flags & DPI_PKT_FLAG_ASSEMBLED) {
+        p->pkt_buffer = &p->asm_pkt;
+    }
+
+    //会话有唯一的解析器
+    if (s->flags & DPI_SESS_FLAG_ONLY_PARSER) {
+        cp = p->cur_parser = list[s->only_parser];
+        if (cp != NULL && cp->parser != NULL) {
+            cp->parser(p);//调用解析器
+
+            if (!BITMASK_TEST(s->parser_bits, s->only_parser)) {
+                DEBUG_LOG(DBG_SESSION, p, "sess %u: skip parser\n", s->id);
+                dpi_delete_parser_data(s, cp);
+                s->flags |= DPI_SESS_FLAG_SKIP_PARSER;
+                s->flags &= ~DPI_SESS_FLAG_ONLY_PARSER;
+                s->flags |= DPI_SESS_FLAG_POLICY_APP_READY;
+            }
+        }
+    } else {
+        // Walk through all parsers
+        p->parser_left = 0;
+        for (t = 0; t < DPI_PARSER_MAX; t ++) {
+            cp = p->cur_parser = list[t];
+            if (cp != NULL && cp->parser != NULL && BITMASK_TEST(s->parser_bits, t)) {
+                cp->parser(p);//调用解析器
+
+                if (BITMASK_TEST(s->parser_bits, t)) {
+                    p->parser_left ++;
+                    last = t;
+                } else {
+                    dpi_delete_parser_data(s, cp);//删除解析器数据
+                }
+            }
+        }
+
+        switch (p->parser_left) {
+        case 0:
+            // Session can still be finalized (protocol recognized) when we reach here - the
+            // parser confirms the session type but is not interested in the session any more.
+            s->flags |= DPI_SESS_FLAG_SKIP_PARSER; //找不到合适的解析器，则会跳过解析过程
+            s->flags |= DPI_SESS_FLAG_POLICY_APP_READY;
+            break;
+        case 1:
+            s->flags |= DPI_SESS_FLAG_LAST_PARSER; //标记最后一个解析器
+            s->only_parser = last;
+            break;
+        }
+    }
+
+    //将p->pkt_buffer 置为 &p->raw;
+    if (p->flags & DPI_PKT_FLAG_ASSEMBLED) {
+        p->pkt_buffer = &p->raw;
+    }
+}
+```
 
 
 
@@ -791,6 +1158,8 @@ void dpi_frag_init(void)
                  ip4frag_trac_match, ip4frag_trac_hash);
 }
 ```
+
+
 
 **查找和添加**
 
@@ -1102,7 +1471,7 @@ void dpi_inject_reset(dpi_packet_t *p, bool to_server)
 }
 ```
 
-同时向客户端和服务器都发送reset数据包。
+dpi_inject_reset_by_session函数是在构造rst包，并且同时向客户端和服务器都发送reset数据包。
 
 
 
@@ -1117,13 +1486,21 @@ p->session->action = DPI_ACTION_BLOCK;
 dpi_set_action(p, DPI_ACTION_DROP);
 ```
 
-对于中间会话的拒绝，保留会话以阻止之后的流量。（没毛病，老铁）
+对于中间会话的拒绝，保留会话以阻止之后的流量。
+
+p->action = DPI_ACTION_DROP
+
+p->session->action = DPI_ACTION_BLOCK
+
+分为这两种情况。
 
 
 
 在使用tc模式阻断时，dp负责记录微隔离的记录日志。
 
-# 八、策略管理
+# 八、agent和dp策略下发及响应
+
+
 
 NeuVector 通过组的方式对容器和主机进行管理，对组进行合规性检查、网络规则、进程和文件访问规则、DLP/WAF 的检测配置。
 
@@ -1159,7 +1536,53 @@ void dp_ctrl_loop(void)
 }
 ```
 
-dp_ctrl_loop函数中使用select网络模型监听可读事件，有可读事件时调用dp_ctrl_handler
+dp_ctrl_loop函数是agent和dp之间通信交互的通道。
+
+创建了g_ctrl_fd和g_ctrl_notify_fd文件描述符。
+
+g_ctrl_fd：agent和dp之间的控制通道。
+
+g_ctrl_notify_fd：agent和dp之间的通知通道。
+
+
+
+```
+g_ctrl_fd = make_named_socket(DP_SERVER_SOCK);
+g_ctrl_notify_fd = make_notify_client(CTRL_NOTIFY_SOCK);
+```
+
+```
+static int make_named_socket(const char *filename)
+{
+    struct sockaddr_un name;
+    int sock;
+    size_t size;
+
+    sock = socket(PF_UNIX, SOCK_DGRAM, 0);
+    if (sock < 0) {
+        return -1;
+    }
+
+    name.sun_family = AF_UNIX;
+    strlcpy(name.sun_path, filename, sizeof(name.sun_path));
+
+    size = (offsetof(struct sockaddr_un, sun_path) + strlen(name.sun_path));
+
+    if (bind(sock, (struct sockaddr *)&name, size) < 0) {
+        return -1;
+    }
+
+    return sock;
+}
+```
+
+从make_named_socket函数可知，g_ctrl_fd是Unix Domain套接字，路径为DP_SERVER_SOCK 
+
+#define DP_SERVER_SOCK "/tmp/dp_listen.sock"
+
+
+
+使用select网络模型监听g_ctrl_fd可读事件，有可读事件时调用dp_ctrl_handler
 
 ```
 static int dp_ctrl_handler(int fd)
@@ -1185,15 +1608,17 @@ static int dp_ctrl_handler(int fd)
 
 基于epoll的事件驱动模型。和libevent的基于事件的驱动模型是几乎一模一样的。
 
-从ring读取，ring是哪里来的,共享内存是干什么?
 
-ingress 和 egress是如何来处理的，\#define DPI_PKT_FLAG_INGRESS    0x00000100宏是如何发挥作用的
+
+ingress 和 egress是如何来处理的，
+
+\#define DPI_PKT_FLAG_INGRESS    0x00000100宏是如何发挥作用的
 
 这几块的代码也看了，但是文字方面并没有补，因为逻辑上比较复杂，所以考虑绘制下状态图来梳理下思路。
 
 
 
-
+如何判断是tap设备，这块也是我需要好好理解的。
 
 # 参考资料：
 
