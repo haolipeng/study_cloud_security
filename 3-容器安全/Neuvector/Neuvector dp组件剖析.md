@@ -99,9 +99,15 @@ chunk
 
 
 
+dp_ctrl_add_mac函数还是很重要。
+
+
+
+
+
 # 一、基础概念
 
-## 1） 架构解析
+## 1、1 架构解析
 
 NeuVector 本身包含 Controller、Enforcer、Manager、Scanner 和 Updater 模块。 
 
@@ -113,7 +119,7 @@ NeuVector 本身包含 Controller、Enforcer、Manager、Scanner 和 Updater 模
 
 
 
-## 2）组 Groups
+## 1、2 组 Groups
 
 **1、自动删除未使用的组**
 
@@ -165,7 +171,7 @@ NeuVector 为主机上的可疑进程和提权提供自动监控（例如端口�
 
 
 
-## 3） 网络策略
+## 1、3 网络策略
 
 NeuVector 的组支持 3 种模式：学习模式、监控模式和保护模式；各个模式实现作用如下：
 
@@ -187,6 +193,235 @@ NeuVector 的组支持 3 种模式：学习模式、监控模式和保护模式�
 - 上新业务时，先学习模式运行一段时间，进行完整的功能测试和调用测试（TODO），得到实际业务环境的网络连接情况和进程执行情况的信息。
 - 监控模式运行一段时间，看看有没有额外的特殊情况，进行判断，添加规则。
 - 最后全部容器都切换到保护模式，确定最终形态。
+
+## 1、4 部署
+
+### 1、4、1 使用docker部署
+
+您必须将 CLUSTER_JOIN_ADDR 设置为适当的 IP 地址。
+
+在 docker-compose 文件中查找 allinone的节点 IP 地址、节点名称以用于 allinone 和执行器的“节点 IP”。
+
+例如
+
+```
+- CLUSTER_JOIN_ADDR=192.168.33.10
+```
+
+对于基于 Swarm 的部署，还要添加以下环境变量：
+
+```
+- NV_PLATFORM_INFO=platform=Docker
+```
+
+
+
+#### **docker-compose 部署 Allinone（特权模式）**
+
+```
+allinone:
+    pid: host
+    image: neuvector/allinone:<version>
+    container_name: allinone
+    privileged: true
+    environment:
+        - CLUSTER_JOIN_ADDR=node_ip
+        - NV_PLATFORM_INFO=platform=Docker
+    ports:
+        - 18300:18300
+        - 18301:18301
+        - 18400:18400
+        - 18401:18401
+        - 18301:18301/udp
+        - 8443:8443
+    volumes:
+        - /lib/modules:/lib/modules:ro
+        - /var/neuvector:/var/neuvector
+        - /var/run/docker.sock:/var/run/docker.sock:ro
+        - /proc:/host/proc:ro
+        - /sys/fs/cgroup:/host/cgroup:ro
+```
+
+在image字段处，需要指定neuvector镜像的版本或标签。
+
+通常情况下，**CLUSTER_JOIN_ADDR**应该设置为运行Allinone容器的节点的 IP 地址。
+
+
+
+端口 18300 和 18301 是集群通信的默认端口。对于集群中的所有控制器和enforcers，它们必须相同。
+
+注意：要在 Allinone 中公开 REST API，请添加 10443 的端口映射，例如 - 10443:10443。
+
+
+
+#### 使用 docker-compose（特权模式）添加一个Enforcer容器
+
+这是 docker-compose 文件的示例，用于将Enforcer容器加入集群。
+
+```
+enforcer:
+    pid: host
+    image: neuvector/enforcer:<version>
+    container_name: enforcer
+    privileged: true
+    environment:
+        - CLUSTER_JOIN_ADDR=controller_node_ip
+        - NV_PLATFORM_INFO=platform=Docker
+    ports:
+        - 18301:18301
+        - 18401:18401
+        - 18301:18301/udp
+    volumes:
+        - /lib/modules:/lib/modules:ro
+        - /var/run/docker.sock:/var/run/docker.sock:ro
+        - /proc:/host/proc:ro
+        - /sys/fs/cgroup/:/host/cgroup/:ro
+```
+
+最重要的环境变量是 CLUSTER_JOIN_ADDR。对于enforcers，将 <controller_node_ip> 替换为控制器的节点 IP 地址。
+
+通常，controller/all-in-one 的 docker-compose 文件和enforcers的 docker-compose 文件中的 CLUSTER_JOIN_ADDR 具有相同的值。
+
+
+
+#### 部署 NeuVector Scanner 容器
+
+将Scanner 容器部署在与控制器相同的主机上
+
+```
+docker run -td --name scanner -e CLUSTER_JOIN_ADDR=controller_node_ip -p 18402:18402 -v /var/run/docker.sock:/var/run/docker.sock:ro neuvector/scanner:latest
+```
+
+
+
+docker-compose例子
+
+```
+Scanner:
+   image: neuvector/scanner:latest
+   container_name: scanner
+   environment:
+     - CLUSTER_JOIN_ADDR=controller_node_ip
+   ports:
+     - 18402:18402
+   volumes:
+     - /var/run/docker.sock:/var/run/docker.sock:ro
+```
+
+当Scanner和控制器部署在不同主机上时，添加环境变量 CLUSTER_ADVERTISED_ADDR 以便控制器可以访问Scanner。
+
+```
+docker run -td --name scanner -e CLUSTER_JOIN_ADDR=controller_node_ip -e CLUSTER_ADVERTISED_ADDR=scanner_host_ip -p 18402:18402 -v /var/run/docker.sock:/var/run/docker.sock:ro neuvector/scanner:latest
+```
+
+想更新Scanner以从Neuvector获取最新的CVE数据库，创建cron job去停止和重启Scanner，拉取最新的数据。
+
+https://open-docs.neuvector.com/scanning/updating#docker-native-updates
+
+
+
+### 1、4、2 不同主机上部署独立Neuvector组件
+
+使用Allinone方式部署的Neuvector组件如下
+
+![image-20220614214604366](picture/image-20220614214604366.png)
+
+admin-assembly
+
+monitor
+
+controller
+
+dp
+
+agent
+
+consul
+
+请注意，docker 不支持将enforcer 作为单独的组件部署在与控制器相同的节点上，如果节点上需要控制器和执行器功能，则需要使用 Allinone 容器。
+
+控制器的docker-compose文件
+
+```
+controller:
+    image: neuvector/controller:<version>
+    container_name: controller
+    pid: host
+    privileged: true
+    environment:
+      - CLUSTER_JOIN_ADDR=[controller IP]
+      - NV_PLATFORM_INFO=platform=Docker
+    ports:
+        - 18300:18300
+        - 18301:18301
+        - 18400:18400
+        - 18401:18401
+        - 18301:18301/udp
+        - 10443:10443
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - /sys/fs/cgroup:/host/cgroup:ro
+      - /var/neuvector:/var/neuvector
+```
+
+docker run也可以使用。如下：
+
+```
+docker run -itd --privileged --name neuvector.controller -e CLUSTER_JOIN_ADDR=controller_ip -p 18301:18301 -p 18301:18301/udp -p 18300:18300 -p 18400:18400 -p 10443:10443 -v /var/neuvector:/var/neuvector -v /var/run/docker.sock:/var/run/docker.sock:ro -v /proc:/host/proc:ro -v /sys/fs/cgroup/:/host/cgroup/:ro neuvector/controller:<version>
+```
+
+
+
+Manager compose文件，将 [controller IP] 替换为要连接的控制器节点的 IP
+
+Docker UCP HRM 服务使用默认端口 8443，此端口与 NeuVector 控制台端口冲突。
+
+```
+manager:
+    image: neuvector/manager:<version>
+    container_name: nvmanager
+    environment:
+      - CTRL_SERVER_IP=[controller IP]
+    ports:
+      - 9443:8443
+```
+
+
+
+Enforcer compose文件
+
+```
+enforcer:
+    image: neuvector/enforcer:<version>
+    pid: host
+    container_name: enforcer
+    privileged: true
+    environment:
+        - CLUSTER_JOIN_ADDR=controller_node_ip
+        - NV_PLATFORM_INFO=platform=Docker
+    ports:
+        - 18301:18301
+        - 18401:18401
+        - 18301:18301/udp
+    volumes:
+        - /lib/modules:/lib/modules:ro
+        - /var/run/docker.sock:/var/run/docker.sock:ro
+        - /proc:/host/proc:ro
+        - /sys/fs/cgroup/:/host/cgroup/:ro
+```
+
+监控和重启 NeuVector
+
+由于 NeuVector 容器未使用 UCP/Swarm 服务进行部署，因此它们不会在节点上自动启动/重新启动。
+
+可通过SIEM 系统为 NeuVector SYSLOG 事件设置告警，或通过数据中心以检测 NeuVector 容器是否未运行。
+
+
+
+enforcer设置为调试模式
+
+![image-20220614220519136](picture/image-20220614220519136.png)
 
 
 
@@ -1406,11 +1641,76 @@ dpi_dlp_ep_policy_check
 
 # 六、应用层防护 WAF 实现
 
+agent在防护时，使用结构体
+
+```
+//waf
+type CLUSWafCriteriaEntry struct {
+	Key     string `json:"key"`
+	Value   string `json:"value"`
+	Op      string `json:"op"`
+	Context string `json:"context,omitempty"`
+}
+```
+
+```
+var preWafRuleLog4sh = &share.CLUSWafRule{
+	Name: common.GetInternalWafRuleName(share.WafRuleNameLog4sh, share.CLUSWafLog4shSensor),
+	Patterns: []share.CLUSWafCriteriaEntry{
+		share.CLUSWafCriteriaEntry{
+			Key:   "pattern",
+			Op:    share.CriteriaOpRegex,
+			Context: share.DlpPatternContextHEAD,
+			Value: "\\$\\{((\\$|\\{|lower|upper|[a-zA-Z]|\\:|\\-|\\})*[jJ](\\$|\\{|lower|upper|[a-zA-Z]|\\:|\\-|\\})*[nN](\\$|\\{|lower|upper|[a-zA-Z]|\\:|\\-|\\})*[dD](\\$|\\{|lower|upper|[a-zA-Z]|\\:|\\-|\\})*[iI])((\\$|\\{|lower|upper|[a-zA-Z]|\\:|\\-|\\}|\\/)|[ldapLDAPrmiRMInsNShtHTcobCOB])*.*",
+		},
+	},
+	CfgType: share.UserCreated,//用户创建
+}
+```
+
+Context对应header，url，body，packet这四种情况。比如为share.DlpPatternContextHEAD
+
+Op为share.CriteriaOpRegex。
+
+Value：为正则表达式的内容。
+
+
+
 dpi_waf_ep_policy_check
 
 采用hyperscan作为匹配引擎，后续需安服来维护正则表达式库。
 
+dpi_process_detector
 
+dpi_arrange_search_buffer
+
+
+
+数据都在struct dpi_packet_ 结构体的buf_t *pkt_buffer;结构中
+
+static dpi_sig_search_api_t DPI_HS_Search = {
+    init:        dpi_dlp_hs_search_init,
+    create:      dpi_dlp_hs_search_create,
+    add_sig:     dpi_dlp_hs_search_add_dlprule,
+    compile:     dpi_dlp_hs_search_compile,
+    detect:      dpi_dlp_hs_search_detect,
+    release:     dpi_dlp_hs_search_release,
+};
+
+主要是detect函数的使用
+
+```
+typedef struct dpi_hyperscan_pm_ {
+    hs_database_t *db;
+    dpi_hyperscan_pattern_t *hs_patterns;
+    uint32_t hs_patterns_num; // number of elements
+    uint32_t hs_patterns_cap; // allocated capacity
+} dpi_hyperscan_pm_t;
+```
+
+
+
+匹配的主体函数是hs_scan
 
 # 七、微隔离
 
