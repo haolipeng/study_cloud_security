@@ -1633,13 +1633,591 @@ dpi_dlp_ep_policy_check
 
 
 
-初始化
+数据防泄露的初始化流程
 
-何时调用
+![image-20220615153825973](picture/image-20220615153825973.png)
 
 
 
 # 六、应用层防护 WAF 实现
+
+从代码中看waf和dlp是走的同一套流程。
+
+
+
+首先可以简单了解下Hyperscan
+
+1、hs_compile_multi 将正则表达式转换为对应模式数据库
+
+2、hs_alloc_scratch  创建即时数据区
+
+3、hs_scan 执行扫描任务
+
+
+
+```
+static dpi_sig_search_api_t DPI_HS_Search = {
+    init:        dpi_dlp_hs_search_init,
+    create:      dpi_dlp_hs_search_create,
+    add_sig:     dpi_dlp_hs_search_add_dlprule,
+    compile:     dpi_dlp_hs_search_compile,
+    detect:      dpi_dlp_hs_search_detect,
+    release:     dpi_dlp_hs_search_release,
+};
+```
+
+我们关心其中三个函数
+
+**add_sig:** dpi_dlp_hs_search_add_dlprule 
+
+**compile:** dpi_dlp_hs_search_compile
+
+detect: dpi_dlp_hs_search_detect
+
+waf的实现思路，分为以下几个方面来实现。
+
+
+
+## 6、1 规则编译
+
+Hyperscan根据传入的正则表达式转换为对应模式数据库。就是调用hs_compile()或hs_compile_multi()或hs_compile_ext_multi()函数的部分。Neuvector使用的是hs_compile_multi
+
+### 6、1、1 调用堆栈分析
+
+聚焦compile:     dpi_dlp_hs_search_compile，
+
+其函数堆栈如下
+
+![image-20220615111853440](picture/image-20220615111853440.png)
+
+注册函数dpi_dlp_hs_search_compile
+
+​	->dpi_dlp_hs_compile
+
+​		->hs_compile_multi编译pcre特征为模式数据库
+
+​		->hs_alloc_scratch申请暂存区
+
+
+
+compile回调函数的调用堆栈如下：
+
+![image-20220615154958386](picture/image-20220615154958386.png)
+
+
+
+**dpi_dlp_hs_search_compile函数**
+
+```c
+
+static void dpi_dlp_hs_search_compile (void *context)
+{
+    dpi_hs_search_t *hs_search = context;
+    dpi_sig_context_class_t c;
+    int i, j;
+
+    //初始化每种上下文的模式数据库
+    for (c = 0; c < DPI_SIG_CONTEXT_CLASS_MAX; c ++) {
+        dpi_dlp_hs_compile(hs_search->data[c].hs_pm, hs_search->detector);
+    }
+}
+```
+
+DPI_SIG_CONTEXT_CLASS_MAX的枚举种类
+
+```
+typedef enum dpi_sig_context_class_ {
+    DPI_SIG_CONTEXT_CLASS_NC = 0,
+    DPI_SIG_CONTEXT_CLASS_URI,
+    DPI_SIG_CONTEXT_CLASS_HEADER,
+    DPI_SIG_CONTEXT_CLASS_BODY,
+    DPI_SIG_CONTEXT_CLASS_PACKET,
+    DPI_SIG_CONTEXT_CLASS_MAX,
+} dpi_sig_context_class_t;
+```
+
+相当于把每一种类型（URI、HEADER、BODY、PACKET等）进行了初始化。
+
+
+
+**dpi_dlp_hs_compile函数**
+
+```
+
+int dpi_dlp_hs_compile(dpi_hyperscan_pm_t *hspm, dpi_detector_t *detector) {
+
+    if (!hspm || hspm->hs_patterns_num == 0) {
+        return -1;
+    }
+
+    // The Hyperscan compiler takes its patterns in a group of arrays.
+    uint32_t num_patterns;
+    char **patterns;
+    uint32_t *flags;
+    uint32_t *ids;
+    uint32_t i;
+
+    num_patterns = hspm->hs_patterns_num;//模式的数量
+    patterns = (char **)calloc(num_patterns, sizeof(char *));
+    flags = (uint32_t *)calloc(num_patterns, sizeof(uint32_t));
+    ids = (uint32_t *)calloc(num_patterns, sizeof(uint32_t));
+    
+    //从hspm->hs_patterns模式数组中提取特征
+    for (i=0; i < num_patterns; i++) {
+        dpi_hyperscan_pattern_t *hp = &hspm->hs_patterns[i];
+        patterns[i] = hp->pattern;
+        flags[i] = hp->hs_flags;
+        flags[i] |= HS_FLAG_SINGLEMATCH;
+        ids[i] = i;
+    }
+
+    hs_compile_error_t *compile_error = NULL;
+    hs_error_t error = hs_compile_multi((const char **)patterns, flags, ids, num_patterns, HS_MODE_BLOCK, NULL, &(hspm->db), &compile_error);
+
+    free(patterns);
+    free(flags);
+    free(ids);
+
+    // Ensure the per detector Hyperscan scratch space has seen this database.
+    //确保每个检测器的 Hyperscan 暂存空间已查看到此数据库。
+    error = hs_alloc_scratch(hspm->db, &detector->dlp_hs_mpse_build_scratch);
+
+    return 0;
+}
+```
+
+正则表达式的来源是**hspm->hs_patterns模式数组**，全局范围内查找hs_patterns的创建和赋值。
+
+创建操作：dpi_hs_create
+
+赋值操作:dpi_dlp_hs_add_pattern（重点）
+
+![image-20220615114143051](picture/image-20220615114143051.png)
+
+**Q：dpi_dlp_hs_add_pattern的调用者是谁？触发时机是什么？**
+
+![image-20220615161944724](picture/image-20220615161944724.png)
+
+是dpi_dlp_hs_search_add_dlprule函数调用了dpi_dlp_hs_add_pattern，前者恰好是添加规则的函数。
+
+
+
+## 6、2 添加规则
+
+聚焦add_sig回调：
+
+```
+static dpi_sig_search_api_t DPI_HS_Search = {
+    add_sig:     dpi_dlp_hs_search_add_dlprule,
+};
+```
+
+search->search_api->add_sig(search->context, sig);--回调函数
+
+dpi_dlp_hs_search_add_dlprule 
+
+​	-> dpi_dlp_hs_add_pattern
+
+### 1、dpi_dlp_hs_search_add_dlprule
+
+```c
+static void dpi_dlp_hs_search_add_dlprule (void *context, dpi_sig_t *sig)
+{
+    dpi_hs_search_t *hs_search = context;
+	for (int i = 0; i < sig->hs_count; i ++) {
+		dpi_sig_context_class_t c;
+		int pcre_len;
+		uint8_t *pcre_pat;
+		uint32_t hs_flags;
+		dpi_sig_assoc_t sa;
+
+		//获取pcre_pat和pcre_len内容 很重要
+		pcre_len = dpi_sigopt_get_pcre(sig->hs_pats[i], &c, &pcre_pat, &hs_flags);
+		sa.sig = sig;
+		sa.dlptbl_idx = hs_search->count - 1;
+		sa.dpa_mask = (~(1 << i)) & ((1 << sig->hs_count) - 1);
+
+		//来源为pcre_pat和pcre_len 很重要
+		switch (c) {
+		case DPI_SIG_CONTEXT_CLASS_URI:
+			dpi_dlp_hs_add_pattern(hs_search->data[c].hs_pm, pcre_pat, pcre_len, hs_flags, &sa);
+			break;
+		case DPI_SIG_CONTEXT_CLASS_HEADER:
+			dpi_dlp_hs_add_pattern(hs_search->data[c].hs_pm, pcre_pat, pcre_len, hs_flags, &sa);
+			break;
+		case DPI_SIG_CONTEXT_CLASS_BODY:
+			dpi_dlp_hs_add_pattern(hs_search->data[c].hs_pm, pcre_pat, pcre_len, hs_flags, &sa);
+			break;
+		case DPI_SIG_CONTEXT_CLASS_PACKET:
+			dpi_dlp_hs_add_pattern(hs_search->data[DPI_SIG_CONTEXT_CLASS_URI].hs_pm, pcre_pat, pcre_len, hs_flags, &sa);
+			dpi_dlp_hs_add_pattern(hs_search->data[DPI_SIG_CONTEXT_CLASS_HEADER].hs_pm, pcre_pat, pcre_len, hs_flags, &sa);
+			dpi_dlp_hs_add_pattern(hs_search->data[DPI_SIG_CONTEXT_CLASS_BODY].hs_pm, pcre_pat, pcre_len, hs_flags, &sa);
+			dpi_dlp_hs_add_pattern(hs_search->data[DPI_SIG_CONTEXT_CLASS_PACKET].hs_pm, pcre_pat, pcre_len, hs_flags, &sa);
+			break;
+		}
+	}
+}
+```
+
+主要流程：
+
+1、dpi_sigopt_get_pcre获取pcre_pat和pcre_len内容
+
+2、根据不同类别如DPI_SIG_CONTEXT_CLASS_HEADER来调用对应的dpi_dlp_hs_add_pattern来添加模式特征串。
+
+
+
+### 2、dpi_dlp_hs_add_pattern函数
+
+```
+static void
+dpi_dlp_hs_add_pattern (dpi_hyperscan_pm_t *hspm, uint8_t *pcre_pat, int patlen, uint32_t hs_flags, dpi_sig_assoc_t *sa)
+{
+    if (!hspm) {
+        return;
+    }
+
+    // Reallocate patterns array if it's at capacity.
+    if (hspm->hs_patterns_num + 1 > hspm->hs_patterns_cap) {
+        uint32_t growth = hspm->hs_patterns_cap / 2 > 0 ? hspm->hs_patterns_cap / 2 : 1;
+        hspm->hs_patterns_cap += growth;
+        dpi_hyperscan_pattern_t *tmp = calloc(1, sizeof(dpi_hyperscan_pattern_t) * hspm->hs_patterns_cap);
+        if (!tmp) {
+            return;
+        }
+        memcpy(tmp, hspm->hs_patterns, sizeof(dpi_hyperscan_pattern_t) * hspm->hs_patterns_num);
+        free(hspm->hs_patterns);
+        hspm->hs_patterns = tmp;
+    }
+
+    dpi_hyperscan_pattern_t *hp = &hspm->hs_patterns[hspm->hs_patterns_num];
+    hp->pattern = (char *)calloc(patlen+1, sizeof(char));
+    if (hp->pattern == NULL) {
+        return;
+    }
+    
+    //将pcre_pat拷贝给hp->pattern
+    hp->pattern_len = strlcpy(hp->pattern, (const char *)pcre_pat, patlen+1);
+    hp->hs_flags = hs_flags;
+    hp->pattern_idx = hspm->hs_patterns_num++;
+    memcpy(&hp->hs_sa, sa, sizeof(dpi_sig_assoc_t));
+}
+```
+
+
+
+### 3、pcre特征值赋值
+
+dpi_sigopt_get_pcre函数
+
+```
+int dpi_sigopt_get_pcre (void *context, dpi_sig_context_class_t *c, uint8_t **pcre, uint32_t *hs_flags)
+{
+    //DEBUG_LOG_FUNC_ENTRY(DBG_DETECT, NULL);
+    dpi_sigopt_pcre_pattern_t *data = context;
+
+    if (data->node.sigapi->type == DPI_SIGOPT_PCRE) {
+        *pcre = data->pcre.string; //重点关注这几句代码
+        *c = data->class;
+        *hs_flags = data->pcre.hs_flags;
+        return strlen((char*)(*pcre));
+    }
+}
+```
+
+
+
+涉及到的结构体dpi_sigopt_pcre_pattern_如下
+
+```
+typedef struct dpi_sigopt_pcre_pattern_ {
+    dpi_sigopt_node_t node;
+
+    uint8_t flags;
+    uint8_t class;  //dpi_sig_context_class_t
+    uint8_t type;  //dpi_sig_context_type_t
+
+    struct {
+        uint8_t *string;           /*pcre signature*/
+        pcre2_code *recompiled;    /*pcre compiled database*/
+        struct hs_database *hs_db; /* hyperscan database */
+        int hs_flags;              /* hyperscan flags used for compile */
+        int hs_noconfirm;          /* hyperscan matches don't need confirm */
+    } pcre;
+} dpi_sigopt_pcre_pattern_t;
+```
+
+pcre结构体中的string字段是pcre特征，recompiled是pcre编译后的数据库。
+
+**Q：pcre结构中的pcre特征string字段是在哪里赋值的？**
+
+**答：dpi_sigopt_pcre_parser函数**
+
+```
+dpi_sigopt_api_t SIGOPTIONPcre = {
+    type:    DPI_SIGOPT_PCRE,
+    parser:  dpi_sigopt_pcre_parser, 
+    handler: dpi_sigopt_pcre_handler,
+    release: dpi_sigopt_pcre_pattern_release,
+};
+```
+
+dpi_dlp_parse_opts_routine
+
+​	dpi_dlp_parse_ruleopt
+
+​		parser回调函数调用
+
+又看到了熟悉的dpi_dlp_parse_opts_routine函数，用于解析规则的线程函数。
+
+
+
+```c
+static dpi_sigopt_status_t
+dpi_dlp_parse_ruleopt (const char *sigopt, const char *value, struct cds_list_head *sigopt_list,
+                  dpi_sig_t *sig)
+{
+    //DEBUG_LOG_FUNC_ENTRY(DBG_DETECT,NULL);
+
+    dpi_sigopt_status_t ret = DPI_SIGOPT_OK;
+    dpi_sigopt_reg_t *opt_itr, *opt_next;
+
+    cds_list_for_each_entry_safe(opt_itr, opt_next, sigopt_list, sonode) {
+        if (strcasecmp(opt_itr->soname, sigopt) == 0) {
+            ret = opt_itr->soapi.parser((char *)value, sig);
+            BITMASK_SET(sig->opt_inuse, opt_itr->soapi.type);
+            return ret;
+        }
+    }
+
+    return DPI_SIGOPT_UNKNOWN_OPTION;
+}
+```
+
+dpi_dlp_parse_opts_routine函数
+
+static dpi_dlp_parser_t DlpRuleParser = {
+    parse_dlpopts:    dpi_dlp_parse_opts_routine,
+};
+
+![image-20220615163928155](picture/image-20220615163928155.png)
+
+```
+static dpi_sigopt_status_t
+dpi_dlp_parse_rule (dpi_dlp_parser_t *parser, char **opts, int count,
+                    const char *text, dpi_detector_t *detector)
+{
+    DEBUG_LOG_FUNC_ENTRY(DBG_DETECT,NULL);
+
+    dpi_sigopt_status_t ret = DPI_SIGOPT_OK;
+    dpi_sig_macro_sig_t *macro;
+    dpi_sig_t *sig;
+    int i;
+    int text_len = strlen(text);
+
+    for (i = 0; i < count; i ++) {
+        strip_str(opts[i]);
+    }
+
+    // allocate storage for macro rule
+    macro = calloc(1, sizeof(dpi_sig_macro_sig_t));
+    if (macro == NULL) {
+        return DPI_SIGOPT_FAILED;
+    }
+
+    macro->conf.text = (char *) calloc(text_len+1, sizeof(char));
+    if (macro->conf.text == NULL) {
+        dpi_dlp_release_macro_rule(macro);
+        return DPI_SIGOPT_FAILED;
+    }
+
+    memcpy(macro->conf.text, text, text_len);
+    macro->conf.text[text_len]='\0';
+
+    dpi_dlp_init_macro_rulelist(macro);
+
+    sig = calloc(1, sizeof(dpi_sig_t));
+    if (sig == NULL) {
+        dpi_dlp_release_macro_rule(macro);
+        return DPI_SIGOPT_FAILED;
+    }
+    sig->conf = &macro->conf;
+    sig->macro = macro;
+    sig->detector = (void *)detector;
+    dpi_dlp_init_rule_optlist(sig);
+
+    cds_list_add((struct cds_list_head *)sig, &macro->sigs);
+
+    ret = parser->parse_dlpopts(parser, opts, count, sig, (void *)detector);
+
+    if (ret != DPI_SIGOPT_OK) {
+        dpi_dlp_release_macro_rule(macro);
+        return ret;
+    }
+    dpi_sig_macro_sig_t *exist;
+
+    if ((exist = sig->macro) != macro) {
+        cds_list_del((struct cds_list_head *)sig);
+
+        exist->conf.action = max(exist->conf.action, macro->conf.action);
+        exist->conf.severity = max(exist->conf.severity, macro->conf.severity);
+
+        sig->conf = &exist->conf;
+        cds_list_add_tail((struct cds_list_head *)sig, &exist->sigs);
+        dpi_dlp_release_macro_rule(macro);
+    } else {
+        cds_list_add_tail((struct cds_list_head *)macro, &detector->dlpSigList);
+    }
+
+    return DPI_SIGOPT_OK;
+}
+```
+
+
+
+## 6、3 规则匹配
+
+聚焦：
+
+```
+static dpi_sig_search_api_t DPI_HS_Search = {
+    detect:      dpi_dlp_hs_search_detect,
+};
+```
+
+查看detect回调函数的调用栈
+
+![image-20220615164252655](picture/image-20220615164252655.png)
+
+
+
+dpi_inspec_ethernet函数是主体
+
+```
+
+int dpi_inspect_ethernet(dpi_packet_t *p)
+{
+    // pattern match 重点在这里
+    if ((dlp_detect || waf_detect) && ((p->session == NULL ||
+                  !FLAGS_TEST(p->session->flags, DPI_SESS_FLAG_IGNOR_PATTERN)) &&
+        !FLAGS_TEST(p->flags, DPI_PKT_FLAG_SKIP_PATTERN))){
+
+        bool continue_detect = true;
+
+        // match reassmebled packet first
+        if (continue_detect && FLAGS_TEST(p->flags, DPI_PKT_FLAG_ASSEMBLED)) {
+            p->pkt_buffer = &p->asm_pkt;
+
+            if (p->pkt_buffer->len > 0) {
+                continue_detect = dpi_process_detector(p);
+            }
+            p->pkt_buffer = &p->raw;
+
+        }
+
+        //match decoded data        
+        if (continue_detect && p->decoded_pkt.len > 0) {
+            p->pkt_buffer = &p->decoded_pkt;
+
+            if (p->pkt_buffer->len > 0) {
+                continue_detect = dpi_process_detector(p);
+            }
+            p->pkt_buffer = &p->raw;
+        }
+
+        if (continue_detect) {
+            if (p->pkt_buffer->len > 0) {
+                continue_detect = dpi_process_detector(p);
+            }
+        }
+
+        if (p->session != NULL && !continue_detect) {
+            FLAGS_SET(p->session->flags, DPI_SESS_FLAG_IGNOR_PATTERN);
+        }
+    }
+
+    return p->action;
+}
+```
+
+
+
+了解了函数调用堆栈后，我们回到dpi_dlp_hs_search_detect函数本身。
+
+```
+static void dpi_dlp_hs_search_detect (void *context, void *packet)
+{
+    dpi_hs_search_t *hs_search = context;
+    dpi_packet_t *p = (dpi_packet_t *)packet;
+    struct cds_list_head *nc_list;
+    bool skip_packet = false;
+    uint32_t proc_id = THREAD_ID;
+    dlptbl_node_t *dlptbl = hs_search->dlptbls[proc_id].tbl;
+    dpi_sig_node_t *sig_node_itr, *sig_node_next;
+
+    if (p->dlp_area[DPI_SIG_CONTEXT_TYPE_URI_ORIGIN].dlp_len > 0) {
+        dpi_dlp_hsdb_detect(hs_search, p, DPI_SIG_CONTEXT_TYPE_URI_ORIGIN);
+        skip_packet = true;
+    }
+
+    if (p->dlp_area[DPI_SIG_CONTEXT_TYPE_HEADER].dlp_len > 0) {
+        dpi_dlp_hsdb_detect(hs_search, p, DPI_SIG_CONTEXT_TYPE_HEADER);
+        skip_packet = true;
+    }
+
+    if (p->dlp_area[DPI_SIG_CONTEXT_TYPE_BODY].dlp_len > 0) {
+        dpi_dlp_hsdb_detect(hs_search, p, DPI_SIG_CONTEXT_TYPE_BODY);
+        skip_packet = true;
+    }
+    
+    if (!skip_packet && p->dlp_area[DPI_SIG_CONTEXT_TYPE_PACKET_ORIGIN].dlp_len > 0) {
+        dpi_dlp_hsdb_detect(hs_search, p, DPI_SIG_CONTEXT_TYPE_PACKET_ORIGIN);
+    }
+
+    nc_list = &hs_search->data[DPI_SIG_CONTEXT_CLASS_NC].nc_sigs;
+    
+    cds_list_for_each_entry_safe(sig_node_itr, sig_node_next, nc_list, node) {
+        dpi_dlp_add_candidate(p, sig_node_itr->sig, true);
+    }
+}
+```
+
+调用函数dpi_dlp_hsdb_detect。
+
+```
+static void
+dpi_dlp_hsdb_detect (dpi_hs_search_t *hs_search, dpi_packet_t *p, dpi_sig_context_type_t t)
+{
+    dpi_sig_context_class_t c = dpi_dlp_ctxt_type_2_cat(t);
+    struct cds_list_head *nc_list;
+    uint32_t len = p->dlp_area[t].dlp_len;
+    uint8_t *buf = p->dlp_area[t].dlp_ptr;
+    dpi_sig_node_t *sig_node_itr, *sig_node_next;
+    dpi_hs_callback_context_t ctx;
+    hs_error_t error;
+    dpi_detector_t *detector = hs_search->detector;
+
+    nc_list = &hs_search->data[c].nc_sigs;
+   
+    ctx.hs_search = &hs_search;
+    ctx.pm = hs_search->data[c].hs_pm;
+    ctx.pkt = &p;
+    ctx.proc_sa = dpi_dlp_hs_proc_sa;
+
+    if (detector->dlp_hs_mpse_scan_scratch == NULL) {
+        HyperscanActivateMpse((void *)detector);
+    }
+
+    error = hs_scan(hs_search->data[c].hs_pm->db, (const char *)buf, len, 0,
+                               detector->dlp_hs_mpse_scan_scratch, dpi_dlp_hs_onmatch, &ctx);
+}
+```
+
+函数的末尾调用了hs_scan函数，这个是通用的hyperscan匹配函数。
+
+
+
+## 6、4 agent处代码（未完成）
 
 agent在防护时，使用结构体
 
@@ -1652,6 +2230,10 @@ type CLUSWafCriteriaEntry struct {
 	Context string `json:"context,omitempty"`
 }
 ```
+
+waf的内置规则有两个，preWafRuleLog4sh和preWafRuleSpring4sh两个，在创建rule时，Neuvector会创建规则对应的Sensor。
+
+
 
 ```
 var preWafRuleLog4sh = &share.CLUSWafRule{
@@ -1666,7 +2248,22 @@ var preWafRuleLog4sh = &share.CLUSWafRule{
 	},
 	CfgType: share.UserCreated,//用户创建
 }
+
+var preWafRuleSpring4sh = &share.CLUSWafRule{
+	Name: common.GetInternalWafRuleName(share.WafRuleNameSpr4sh, share.CLUSWafSpr4shSensor),
+	Patterns: []share.CLUSWafCriteriaEntry{
+		share.CLUSWafCriteriaEntry{
+			Key:   "pattern",
+			Op:    share.CriteriaOpRegex,
+			Context: share.DlpPatternContextBODY,
+			Value: "if.*equals.*request\\.getParameter.*pwd.*getRuntime.*exec.*request\\.getParameter.*cmd.*getInputStream.*read.*print.*classLoader",
+		},
+	},
+	CfgType: share.UserCreated,
+}
 ```
+
+
 
 Context对应header，url，body，packet这四种情况。比如为share.DlpPatternContextHEAD
 
@@ -1674,11 +2271,42 @@ Op为share.CriteriaOpRegex。
 
 Value：为正则表达式的内容。
 
+Key：可为"pattern"
+
+
+
+默认sensor所有的waf规则。
+
+```
+var defaultSensorAllWafRule = &share.CLUSWafSensor{
+	Name:     share.CLUSWafDefaultSensor,
+	Groups:   make(map[string]string),
+	RuleList: map[string]*share.CLUSWafRule {
+		preWafRuleLog4sh.Name:      preWafRuleLog4sh,
+		preWafRuleSpring4sh.Name:   preWafRuleSpring4sh,
+	},
+	PreRuleList: make(map[string][]*share.CLUSWafRule),
+	Comment:   commentDefaultWafSensor,
+	Predefine: true,
+	CfgType:   share.SystemDefined,
+}
+```
+
+sensor的操作函数如下
+
+createWafSensor
+
+deleteWafSensor
+
+handlerWafSensor
+
+updateWafSensor
+
 
 
 dpi_waf_ep_policy_check
 
-采用hyperscan作为匹配引擎，后续需安服来维护正则表达式库。
+采用hyperscan作为匹配引擎，后续需公司安全服务人员来维护正则表达式库。
 
 dpi_process_detector
 
@@ -1688,16 +2316,7 @@ dpi_arrange_search_buffer
 
 数据都在struct dpi_packet_ 结构体的buf_t *pkt_buffer;结构中
 
-static dpi_sig_search_api_t DPI_HS_Search = {
-    init:        dpi_dlp_hs_search_init,
-    create:      dpi_dlp_hs_search_create,
-    add_sig:     dpi_dlp_hs_search_add_dlprule,
-    compile:     dpi_dlp_hs_search_compile,
-    detect:      dpi_dlp_hs_search_detect,
-    release:     dpi_dlp_hs_search_release,
-};
 
-主要是detect函数的使用
 
 ```
 typedef struct dpi_hyperscan_pm_ {
@@ -1710,7 +2329,7 @@ typedef struct dpi_hyperscan_pm_ {
 
 
 
-匹配的主体函数是hs_scan
+
 
 # 七、微隔离
 
