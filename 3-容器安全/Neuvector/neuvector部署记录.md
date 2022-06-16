@@ -1,3 +1,7 @@
+一、agent调试
+
+
+
 dlv --headless=true --listen=:2345 --api-version=2 --accept-multiclient exec /usr/local/bin/agent -- -j 192.168.101.97
 
 agent是否可以单独部署，dp是否可以单步部署？其他组件是否可以单独部署呢？
@@ -31,3 +35,9 @@ https://github.com/vishvananda/netlink
 
 neuvector单机调试
 netlink还是需要好好的熟悉下。
+
+
+
+二、dp调试环境搭建
+
+dp和agent在allinone模式下，都是在谷歌的alpine操作系统中进行运行的。
