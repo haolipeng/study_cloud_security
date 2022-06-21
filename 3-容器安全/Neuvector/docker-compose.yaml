@@ -1,10 +1,10 @@
 allinone:
     pid: host
-    image: neuvector/allinone:5.0.0
-    container_name: allinone_5.0.0
+    image: neuvector/allinone:haolp_5.0.0
+    container_name: allinone_haolp_5.0.0
     privileged: true
     environment:
-        - CLUSTER_JOIN_ADDR=192.168.101.97
+        - CLUSTER_JOIN_ADDR=10.240.19.222
         - NV_PLATFORM_INFO=platform=Docker
         - ENV_CTRL_PATH_DEBUG=true
     ports:
@@ -14,6 +14,11 @@ allinone:
         - 18401:18401
         - 18301:18301/udp
         - 8443:8443
+    environment:
+        - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/home/work/goProject/bin:/usr/local/go/bin:/home/work/goProject/bin
+        - GOPATH=/home/work/goProject
+        - GO111MODULE=on
+        - GOPROXY=https://goproxy.cn
     volumes:
         - /lib/modules:/lib/modules:ro
         - /var/neuvector:/var/neuvector
@@ -21,4 +26,4 @@ allinone:
         - /proc:/host/proc:ro
         - /sys/fs/cgroup:/host/cgroup:ro
         - /root/neuvector_5.0.0/bin:/usr/local/bin
-        - /usr/local/go_1.16.15:/usr/local/go
+        - /usr/local/go:/usr/local/go
