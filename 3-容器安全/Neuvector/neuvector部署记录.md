@@ -34,6 +34,14 @@ neuvector/allinone:haolp_5.0.0
 
 |ERRO|AGT|dp.dpSendMsgExSilent: Read error - error=read unixgram /tmp/dp_client.23546->/tmp/dp_listen.sock: i/o timeout
 
+
+
+allinone_haolp_5.0.0 | 2022-06-21T10:17:43.917|ERRO|AGT|dp.dpSendMsgExSilent: Data path not connected
+
+是报的连接通道的异常错误吗？
+
+
+
 为啥一直在报这个错误呢？#todo
 
 
