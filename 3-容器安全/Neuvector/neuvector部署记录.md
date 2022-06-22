@@ -153,6 +153,10 @@ apk add vim
 
 ![image-20220616141001775](picture/image-20220616141001775.png)
 
+```
+apk add gdb
+```
+
 
 
 **alpine安装whereis命令**
@@ -170,14 +174,6 @@ apk add --update util-linux
 docker tag neuvector/allinone:haolp_5.0.0 haolipeng/neuvector/allinone:debug_5.0.0
 
 docker push haolipeng/neuvector/allinone:debug_5.0.0
-
-
-
-
-
-
-
-
 
 
 
@@ -205,15 +201,29 @@ docker cp allinone_5.0.0:/usr/local/bin  /root/neuvector_5.0.0/bin
 
 ## 2、dlv方式来启动agent进程
 
+修改agent的makefile中编译参数为
+
 dlv --headless=true --listen=:2345 --api-version=2 --accept-multiclient exec /usr/local/bin/agent -- -j 192.168.101.97
 
 
 
-## 3、gdb或gdbserver方式来启动dp进程
+## 3、配置Goland IDE
+
+在remote debug configuration中设置dlv的端口，然后就可以开始调试了。
+
+
+
+## 4、gdb或gdbserver方式来启动dp进程
 
 allinone容器启动Neuvector的方式是，利用supervisor来启动monitor进程，
 
 ![image-20220621132735757](picture/image-20220621132735757.png)
+
+
+
+## 5、配置clion IDE
+
+
 
 https://github.com/vishvananda/netlink
 netlink还是需要好好的熟悉下。linux上很多的命令和工具都是采用netlink来实现的。
