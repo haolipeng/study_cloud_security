@@ -1,5 +1,13 @@
 
 
+准备工作：
+
+```
+docker cp allinone_5.0.0:/usr/local/bin /root/neuvector_5.0.0/bin
+```
+
+将容器中的
+
 # 一、远程调试agent
 
 默认模式下，agent的自保护模式会检测dp的健康状态，不健康则会kill掉dp进程，
@@ -9,6 +17,11 @@ Neuvector的enforcer容器中默认会处于NVProtect模式，用户进入容器后输入一些敏感命令
 
 
 ## 1、1 重新编译agent
+
+编译参数修改
+go build -gcflags='-N -l'
+
+
 
 对agent代码进行修改，删除所有调用syscall.Kill的代码片段。
 
@@ -115,7 +128,7 @@ docker exec -it allinone_hlp_5.0.0 /bin/sh
 
 
 
-go install github.com/go-delve/delve/cmd/dlv@v1.6.1
+go get github.com/go-delve/delve/cmd/dlv@v1.6.1
 
 如果此种方式安装dlv失败，可从github.com/go-delve/delve下载源代码进行go install安装
 

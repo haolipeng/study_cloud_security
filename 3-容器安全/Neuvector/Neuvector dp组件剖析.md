@@ -2215,9 +2215,133 @@ dpi_dlp_hsdb_detect (dpi_hs_search_t *hs_search, dpi_packet_t *p, dpi_sig_contex
 
 函数的末尾调用了hs_scan函数，这个是通用的hyperscan匹配函数。
 
+## 6、4 Candidate候选流程
+
+![image-20220623213021181](picture/image-20220623213021181.png)
+
+图片摘自《Candidates流程.drawio》流程图。
+
+调用hs_scan扫描，并首次匹配成功后，调用回调函数dpi_dlp_hs_onmatch函数，进而调用dpi_dlp_hs_proc_sa，然后针对数据包来说，将第一次匹配成功的特征添加到候选人名单。
+
+待二次匹配时，调用dpi_sigopt_pcre_search函数。
 
 
-## 6、4 agent处代码（未完成）
+
+TODO：
+
+Q：进行了两次匹配，这两次匹配有什么不同吗？
+
+
+
+```c
+static int
+dpi_sigopt_pcre_search (dpi_sigopt_pcre_pattern_t *data, dpi_packet_t *p,
+                    dpi_sig_context_type_t t, dpi_sig_t *sig)
+{
+    //DEBUG_LOG_FUNC_ENTRY(DBG_DETECT, NULL);
+    dpi_dlp_area_t *dlparea = &p->dlp_area[t];
+    uint8_t *ptr;
+    uint32_t len, offset;
+    int ret = 0;
+    pcre2_match_data * match_data;//匹配的数据
+    PCRE2_SIZE *ovector;
+    int rc;
+    int found_offset = -1;
+    
+    ptr = dlparea->dlp_ptr;//内容首地址
+    len = dlparea->dlp_len;//内容长度
+    offset = dlparea->dlp_offset;//内容偏移量
+    
+    // Prefilter with Hyperscan if available; if Hyperscan says the buffer
+    // cannot match this PCRE, we can fall out here.
+    //尽量采用Hyperscan的预过滤，如果 Hyperscan 说缓冲区无法匹配这个 PCRE，那这里可以失败
+    if (data->pcre.hs_db) {
+        int hs_match = dpi_sigopt_hs_search(data, (const char*)ptr, len, offset, &found_offset, (dpi_detector_t *)sig->detector);
+        int is_prefiltering = data->pcre.hs_flags & HS_FLAG_PREFILTER;
+
+        // If the pattern is inverted and we're not prefiltering AND
+        // start_offset was zero, we don't have to do confirm in PCRE.
+        if (FLAGS_TEST(data->flags, DPI_SIGOPT_PAT_FLAG_NEGATIVE)) {
+            if (offset == 0 && !is_prefiltering) {
+                return !hs_match;
+            } else if (!hs_match) {
+                // Hyperscan didn't match, so pcre_exec will not match, so
+                // return that the INVERTED pcre did match.
+                return 1;
+            } else {
+                // Hyperscan did match, we need to confirm with pcre as we're
+                // prefiltering.
+                hyperscan匹配成功，由于是预过滤模式，所以需要用pcre来确认
+                goto pcre_confirm;
+            }
+        }//end of FLAGS_TEST
+
+        // Note: we must do confirm in PCRE if a start_offset was specified.
+        if (offset == 0) {
+            if (data->pcre.hs_noconfirm || (!is_prefiltering)) {
+                return hs_match; // No confirm necessary.
+            }
+        }
+
+        if (!hs_match) {
+            // No match in Hyperscan, so no PCRE match can occur.
+            return 0;
+        }
+
+        // Otherwise, Hyperscan claims there might be a match. Fall through to
+        // post-confirm with PCRE.
+    }
+
+pcre_confirm:
+
+    //
+    if(data->pcre.recompiled == NULL) {
+        DEBUG_LOG(DBG_DETECT, p, "ERROR: PCRE2 signature is not compiled '%s'\n", data->pcre.string);
+        return ret;
+    } 
+    //采用pcre的方式进行再匹配
+    match_data = pcre2_match_data_create_from_pattern(data->pcre.recompiled, NULL);
+    
+    rc = pcre2_match(data->pcre.recompiled, (PCRE2_SPTR)ptr, len, offset, 0, match_data, NULL);
+    
+    /* Matching failed: handle error cases */
+    if (rc < 0) {
+        //匹配失败
+        switch(rc){
+            case PCRE2_ERROR_NOMATCH: 
+                //DEBUG_LOG(DBG_DETECT, p, "PCRE2 Pattern does not match\n");
+                break;
+            default: 
+                DEBUG_LOG(DBG_DETECT, p, "PCRE2 Matching error %d\n", rc);
+                break;
+        }
+        ret = 0;
+    } else {
+        //匹配成功
+        /* Match succeded. Get a pointer to the output vector, where string offsets are
+        stored. */
+        ovector = pcre2_get_ovector_pointer(match_data);
+        DEBUG_LOG(DBG_DETECT, NULL, "Match succeeded between offset0 %d and offset1 %d\n", (int)ovector[0],(int)ovector[1]);
+        found_offset = (int)ovector[1];
+        p->dlp_match_seq = dlparea->dlp_start + dlparea->dlp_offset + found_offset;
+        p->dlp_match_type = t;
+        ret = 1;
+    }
+    pcre2_match_data_free(match_data);
+
+    if (!FLAGS_TEST(data->flags, DPI_SIGOPT_PAT_FLAG_NEGATIVE)) {
+        return ret;
+    } else {
+        return !ret;
+    }
+}
+```
+
+hyperscan的预过滤模式是什么意思
+
+
+
+## 6、5 agent处代码（未完成）
 
 agent在防护时，使用结构体
 
