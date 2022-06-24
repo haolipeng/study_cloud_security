@@ -28,6 +28,8 @@ HTTP，HTTPS，SSL，SSH，DNS，DNCP，NTP，TFTP，ECHO，RTSP，SIP，MySQL�
 
 TODO:对接下waf和dlp的owasp的ruleset规则，可减少运维工作量。
 
+官方issue有人提了，但是好像没做完。
+
 
 
 5、协议解析器的注册和使用
@@ -71,7 +73,11 @@ TODO:对接下waf和dlp的owasp的ruleset规则，可减少运维工作量。
 
 
 
-9、还需加强的地方？
+9、为什么会设计出proxymesh会话表这个概念？
+
+
+
+10、还需加强的地方？
 
 微隔离产品 = 数据面 + 控制面，将策略和执行分离是最好的。
 
@@ -79,11 +85,15 @@ TODO:对接下waf和dlp的owasp的ruleset规则，可减少运维工作量。
 
 
 
-这两个开源再好好的过一遍，很久没玩，有点忘记了
+这两个开源再好好的过一遍
+
+ndpi
 
 snort
 
 suricata
+
+个人见解，在线分析可参考
 
 
 
@@ -95,24 +105,16 @@ chunk
 
 
 
-抓包技术那块，我是好好研究过的，所以交给我没问题。
-
-
-
-dp_ctrl_add_mac函数还是很重要。
-
-
-
-
-
 # 一、基础概念
 
 ## 1、1 架构解析
 
+![Architecture](picture/architecture-16560287550211.png)
+
 NeuVector 本身包含 Controller、Enforcer、Manager、Scanner 和 Updater 模块。 
 
 - Controller ：整个 NeuVector 的控制模块，API 入口，包括配置下发，高可用主要考虑 Controller 的 HA ，通常建议部署 3 个 Controller 模块组成集群。
-- Enforcer ：主要用于安全策略部署下发和执行，DaemonSet 类型会在每个节点部署。
+- Enforcer ：主要用于安全策略部署下发和执行，K8S环境的DaemonSet 类型会在每个节点部署。
 - Manager：提供 web-UI(仅HTTPS) 和 CLI 控制台，供用户管理 NeuVector 。
 - Scanner ：对节点、容器、Kubernetes 、镜像进行 CVE 漏洞扫描
 - Updater ：cronjob ，用于定期更新 CVE 漏洞库
@@ -135,7 +137,9 @@ NeuVector 为主机上的可疑进程和提权提供自动监控（例如端口�
 
 **3、自定义组**
 
-可以通过输入组的条件手动添加组。note：自定义组没有保护模式，因为它可能包含很多不同组的容器，每个容器都可能处于不同的模式，从而导致对行为的混淆。
+可以通过输入组的条件手动添加组。
+
+注意：自定义组没有保护模式，因为它可能包含很多不同组的容器，每个容器都可能处于不同的模式，从而导致对行为的混淆。
 
 可以通过以下方式创建组：
 
@@ -200,7 +204,7 @@ NeuVector 的组支持 3 种模式：学习模式、监控模式和保护模式�
 
 您必须将 CLUSTER_JOIN_ADDR 设置为适当的 IP 地址。
 
-在 docker-compose 文件中查找 allinone的节点 IP 地址、节点名称以用于 allinone 和执行器的“节点 IP”。
+在 docker-compose 文件中查找 allinone的节点 IP 地址以用于 allinone 和执行器的“节点 IP”。
 
 例如
 
@@ -473,7 +477,7 @@ meter是仪表盘，用于统计程序运行过程中的数据。
 
 ### 2、2、1 dpi_packet_t数据包结构体
 
-```
+```c
 typedef struct dpi_packet_ {
     uint8_t *pkt;
 
@@ -484,14 +488,14 @@ typedef struct dpi_packet_ {
     struct dpi_session_ *session;
     struct dpi_wing_ *this_wing, *that_wing;
 
-    uint16_t l2;
-    uint16_t l3;
-    uint16_t l4;
-    uint16_t cap_len;
+    uint16_t l2;//默认是0
+    uint16_t l3;//ethernet长度
+    uint16_t l4;//ip长度
+    uint16_t cap_len;//捕获数据包长度
     uint16_t len;
     uint16_t eth_type;
-    uint16_t sport, dport;
-    uint8_t ip_proto;
+    uint16_t sport, dport;//源端口,目的端口
+    uint8_t ip_proto;//ip协议
 
     uint8_t tcp_wscale;
     uint16_t tcp_mss;
@@ -509,10 +513,10 @@ typedef struct dpi_packet_ {
 
     uint64_t id;
     struct dpi_parser_ *cur_parser;//当前解析器
-    buf_t *pkt_buffer;
-    buf_t raw;
-    buf_t asm_pkt;
-    uint8_t *defrag_data;
+    buf_t *pkt_buffer;//数据包缓存
+    buf_t raw;	//原始数据包
+    buf_t asm_pkt;//重组后数据包
+    uint8_t *defrag_data;//ip分片数据
     uint32_t asm_seq, parser_asm_seq; // cache asm_seq during protocol parsing
 
     io_ctx_t *ctx;
@@ -528,20 +532,56 @@ typedef struct dpi_packet_ {
     uint8_t parser_left;
     /*dlp related*/
     uint32_t dlp_match_seq;
-    dpi_sig_context_type_t dlp_match_type;
-    dpi_sig_context_type_t dlp_pat_context;
+    dpi_sig_context_type_t dlp_match_type;//dlp匹配类型
+    dpi_sig_context_type_t dlp_pat_context;//pattern模式的上下文
     uint8_t dlp_match_flags;
     dpi_dlp_area_t dlp_area[DPI_SIG_CONTEXT_TYPE_MAX];
     buf_t decoded_pkt;
 
-    uint8_t dlp_candidates_overflow;
-    uint8_t has_dlp_candidates;
+    uint8_t dlp_candidates_overflow;//是否超过最大candidates
+    uint8_t has_dlp_candidates;//是否有candidates
 
-    int dlp_results;
-    int dlp_candidates;
-    dpi_match_t dlp_match_results[DPI_MAX_MATCH_RESULT];
-    dpi_match_candidate_t dlp_match_candidates[DPI_MAX_MATCH_CANDIDATE];
+    int dlp_results;//dlp结果
+    int dlp_candidates;//dlp候选人数量
+    dpi_match_t dlp_match_results[DPI_MAX_MATCH_RESULT];//匹配的dlp结果，和dlp_results一起使用
+    dpi_match_candidate_t dlp_match_candidates[DPI_MAX_MATCH_CANDIDATE];//匹配的dlp候选人信息，和dlp_candidates一起使用
 } dpi_packet_t;
+```
+
+默认candidates是256
+
+#define DPI_MAX_MATCH_CANDIDATE  256
+
+
+
+dlp_match_type参考结构体dpi_sig_context_type_t
+
+```
+typedef enum dpi_sig_context_type_ {
+    DPI_SIG_CONTEXT_TYPE_URI_ORIGIN = 0,
+    DPI_SIG_CONTEXT_TYPE_HEADER,
+    DPI_SIG_CONTEXT_TYPE_BODY,
+    DPI_SIG_CONTEXT_TYPE_SQL_QUERY,
+    DPI_SIG_CONTEXT_TYPE_PACKET_ORIGIN,
+    DPI_SIG_CONTEXT_TYPE_MAX,
+} dpi_sig_context_type_t;
+```
+
+分别对应web页面的uri，header，body，packet的context类型。
+
+
+
+dlp_area为什么会有这个变量呢？起的什么作用？
+
+```c
+typedef struct dpi_dlp_area_ {
+    uint8_t *dlp_ptr;        // starting position
+    uint32_t dlp_len;        // length of the area
+    uint32_t dlp_start;      // start of seqnum
+    uint32_t dlp_end;        // end of seqnum
+    uint32_t dlp_offset;
+    uint8_t dlp_flags;
+} dpi_dlp_area_t;
 ```
 
 
@@ -564,7 +604,7 @@ typedef struct dpi_session_ {
     uint16_t flags;
     uint8_t tick_flags :4,
             meter_flags:4;
-    uint8_t only_parser; //唯一的解析器
+    uint8_t only_parser; //唯一的协议解析器，数据包到来，想走一遍所有协议解析器，走到最后的解析器就是最符合协议特征的解析器。
 
     uint32_t small_window_tick; // small window size start tick
 
@@ -577,7 +617,7 @@ typedef struct dpi_session_ {
             term_reason: 2;
     uint32_t threat_id;
     dpi_policy_desc_t policy_desc;
-    dpi_policy_desc_t xff_desc;
+    dpi_policy_desc_t xff_desc;// X-Forward-For策略
     BITOP tags;
     uint32_t xff_client_ip;
     uint16_t xff_app;
@@ -585,20 +625,36 @@ typedef struct dpi_session_ {
 } dpi_session_t;
 ```
 
+xff策略的产生是什么原因？
+
+xff是 X-Forward-For的缩写。
+
+ neuvector 这边只能看到 TCP 连接两端的 IP。
+
+过了Nginx网关这种，可以通过XFF Header来识别它真正的客户端ip。
+
+xff_client_ip是 X-Forward-For客户端的ip地址。
+
+
+
 dpi_session_t结构体用于描述会话，不仅仅是tcp会话，也可以是ip、udp会话。
 
-1、使用无锁rcu哈希表
+采取的技术如下：
 
-2、时间轮
+#### 1、使用无锁rcu哈希表
+
+#### 2、时间轮
 
 timer_entry_t ts_entry; //时间轮
 timer_entry_t tick_entry;//时间轮
 
-这两个时间轮之间的差别是什么？有知道的小伙伴告诉我下吗？
+TODO 这两个时间轮之间的差别是什么？有知道的小伙伴告诉我下吗？
 
-3、会话的client端及server端信息
 
-dpi_wing_t client, server;
+
+#### 3、会话的client端及server端信息
+
+在dpi_session_t结构体中存在变量 dpi_wing_t client, server;
 
 ```
 typedef struct dpi_wing_ {
@@ -645,11 +701,11 @@ typedef struct io_callback_ {
 } io_callback_t;
 ```
 
-threat_log：威胁日志
+**threat_log：**威胁日志
 
-traffic_log：流量日志
+**traffic_log：**流量日志
 
-connect_report:连接上报
+**connect_report: **连接上报
 
 
 
@@ -686,6 +742,8 @@ dp_ctrl_send_json：将 json 消息作为响应发送到客户端套接字。
 
 dp_ctrl_send_binary:将二进制消息作为响应发送到客户端套接字。
 
+
+
 ### 2、2、4 策略相关数据结构
 
 #### 1）规则dpi_rule_t
@@ -704,6 +762,8 @@ key代表查找的key，desc代表的是策略的描述。
 
 #### 2）dpi_policy_desc_t策略描述
 
+
+
 ```go
 typedef struct dpi_policy_desc_ {
     uint32_t id;
@@ -720,6 +780,8 @@ typedef struct dpi_policy_desc_ {
     uint32_t order;
 } dpi_policy_desc_t;
 ```
+
+
 
 
 
@@ -749,6 +811,97 @@ enum {
 };
 ```
 
+TODO Q:是如何区分是ingress还是egress流量的呢？
+
+
+
+
+
+### 2、2、5 io_ep_t端点结构
+
+```
+typedef struct io_ep_ {
+    char iface[IFACE_NAME_LEN];//网口
+    struct io_mac_ *mac;    // Original MAC
+    struct io_mac_ *ucmac;  //组播mac地址
+    struct io_mac_ *bcmac;  //广播mac地址
+    struct ether_addr pmac; // proxymesh的原始mac地址
+    io_internal_pip_t *pips; // proxymesh's parent IPs 父ips
+
+    uint32_t COPY_START;
+
+    io_stats_t stats;
+
+    rcu_map_t app_map;
+    uint32_t app_updated;
+    uint16_t app_ports;
+
+    bool tap;//是否是tap设备
+    uint8_t cassandra_svr: 1,
+            kafka_svr:     1,
+            couchbase_svr: 1,
+            couchbase_clt: 1,
+            zookeeper_svr: 1,
+            zookeeper_clt: 1;
+    void *policy_hdl;//TODO 这个字段是如何使用的
+    uint16_t policy_ver;
+
+    rcu_map_t dlp_cfg_map;//dlp配置表
+    rcu_map_t waf_cfg_map;//waf配置表
+    rcu_map_t dlp_rid_map;//dlp规则id表
+    rcu_map_t waf_rid_map;//waf规则id表
+    void *dlp_detector;//dlp检测器
+    uint16_t dlp_detect_ver;//检测器版本
+    bool dlp_inside;
+} io_ep_t;
+```
+
+之所以学习io_ep_t结构体，是因为waf和dlp的detector检测器和对应的rule规则，都是挂在io_ep_t端点结构体下的。
+
+### 2、2、6 模式匹配相关数据结构
+
+#### 1、dpi_sig_t结构
+
+```
+typedef struct dpi_sig_ {
+    struct cds_list_head node;
+
+    dpi_sig_config_t *conf;//重要
+    dpi_sig_macro_sig_t *macro;//重要
+    void *detector;
+
+    uint32_t sig_id;
+    uint16_t action   : 3,
+              severity : 3,
+              hs_count: 5;
+
+    uint16_t flags;  
+    struct dpi_sigopt_node_ *hs_pats[DPI_MAX_PCRE_PATTERNS];
+
+    struct cds_list_head uri_opts, header_opts, body_opts, packet_opts;//链表
+    BITMASK_DEFINE(opt_inuse, DPI_SIGOPT_MAX);
+    BITMASK_DEFINE(pat_inuse, DPI_SIG_CONTEXT_CLASS_MAX);
+
+    uint8_t pcre_count;//pcre数量
+    void *last_pattern;
+} dpi_sig_t;
+```
+
+#### 2、dpi_sig_config_t结构
+
+```
+typedef struct dpi_sig_config_ {
+    char *name, *description, *text;
+    uint32_t id;
+    uint16_t flags;
+    uint8_t severity;
+    uint8_t action;
+    uint32_t key;         
+} dpi_sig_config_t;
+```
+
+对于特征配置的描述。
+
 
 
 ## 2、3 线程模型剖析
@@ -770,7 +923,7 @@ g_dpi_thread_data[THREAD_ID].xxxxx，其中xxxxx代表每个线程都有属于�
 
 
 
-从线程模型来剖析大局的话，整个项目只创建了三个线程：
+从线程模型来剖析大局的话，整个项目只创建了三类线程：
 
 - 一个定时器线程timer_thr
 - 一个dlp线程bld_dlp_thr
@@ -1678,19 +1831,81 @@ waf的实现思路，分为以下几个方面来实现。
 
 
 
+## 6、0 规则解析
+
+规则解析不同字段使用了不同的解析器
+
+**id解析：**dpi_sigopt_sig_id_parser
+
+**name解析：**dpi_sigopt_name_parser
+
+**pattern解析：**dpi_sigopt_pcre_parser
+
+**context解析：**dpi_sigopt_context_parser
+
+以下是解析函数的初始化。
+
+```
+void dpi_dlp_register_options (dpi_dlp_parser_t *dlpruleparser)
+{
+    DEBUG_LOG_FUNC_ENTRY(DBG_INIT|DBG_DETECT,NULL);
+
+    if (dlpruleparser->dlprulelist.next == NULL &&
+        dlpruleparser->dlprulelist.prev == NULL) {
+        CDS_INIT_LIST_HEAD(&dlpruleparser->dlprulelist);
+    }
+    dpi_register_dlp_ruleopt_api(&dlpruleparser->dlprulelist,
+                             "sig_id", dpi_sigopt_sig_id_register());
+    dpi_register_dlp_ruleopt_api(&dlpruleparser->dlprulelist,
+                             "name", dpi_sigopt_name_register());
+    dpi_register_dlp_ruleopt_api(&dlpruleparser->dlprulelist,
+                             "context", dpi_sigopt_context_register());
+    dpi_register_dlp_ruleopt_api(&dlpruleparser->dlprulelist,
+                             "pcre", dpi_sigopt_pcre_register());
+}
+```
+
+
+
+```
+dpi_sigopt_api_t SIGOPTIONPcre = {
+    type:    DPI_SIGOPT_PCRE,
+    parser:  dpi_sigopt_pcre_parser, 
+    handler: dpi_sigopt_pcre_handler,
+    release: dpi_sigopt_pcre_pattern_release,
+};
+```
+
+如上述代码所示：
+
+"pcre"字段的解析函数是dpi_sigopt_pcre_parser。
+
+
+
 ## 6、1 规则编译
 
-Hyperscan根据传入的正则表达式转换为对应模式数据库。就是调用hs_compile()或hs_compile_multi()或hs_compile_ext_multi()函数的部分。Neuvector使用的是hs_compile_multi
+Hyperscan根据传入的正则表达式转换为对应模式数据库。最终是调用hs_compile()或hs_compile_multi()或hs_compile_ext_multi()函数的代码。
+
+Neuvector使用的是hs_compile_multi。
 
 ### 6、1、1 调用堆栈分析
 
-聚焦compile:     dpi_dlp_hs_search_compile，
+聚焦compile回调函数:     dpi_dlp_hs_search_compile，
 
-其函数堆栈如下
+```
+static dpi_sig_search_api_t DPI_HS_Search = {
+    init:        dpi_dlp_hs_search_init,
+    create:      dpi_dlp_hs_search_create,
+    add_sig:     dpi_dlp_hs_search_add_dlprule,
+    compile:     dpi_dlp_hs_search_compile,
+    detect:      dpi_dlp_hs_search_detect,
+    release:     dpi_dlp_hs_search_release,
+};
+```
 
-![image-20220615111853440](picture/image-20220615111853440.png)
 
-注册函数dpi_dlp_hs_search_compile
+
+其注册函数dpi_dlp_hs_search_compile调用如下函数：
 
 ​	->dpi_dlp_hs_compile
 
@@ -1706,7 +1921,7 @@ compile回调函数的调用堆栈如下：
 
 
 
-**dpi_dlp_hs_search_compile函数**
+#### **1、dpi_dlp_hs_search_compile函数**
 
 ```c
 
@@ -1718,7 +1933,7 @@ static void dpi_dlp_hs_search_compile (void *context)
 
     //初始化每种上下文的模式数据库
     for (c = 0; c < DPI_SIG_CONTEXT_CLASS_MAX; c ++) {
-        dpi_dlp_hs_compile(hs_search->data[c].hs_pm, hs_search->detector);
+        dpi_dlp_hs_compile(hs_search->data[c].hs_pm, hs_search->detector);//重点
     }
 }
 ```
@@ -1736,11 +1951,11 @@ typedef enum dpi_sig_context_class_ {
 } dpi_sig_context_class_t;
 ```
 
-相当于把每一种类型（URI、HEADER、BODY、PACKET等）进行了初始化。
+相当于把每一种类型（URI、HEADER、BODY、PACKET等）的特征进行了初始化。
 
 
 
-**dpi_dlp_hs_compile函数**
+#### **2、dpi_dlp_hs_compile函数**
 
 ```
 
@@ -1772,6 +1987,7 @@ int dpi_dlp_hs_compile(dpi_hyperscan_pm_t *hspm, dpi_detector_t *detector) {
     }
 
     hs_compile_error_t *compile_error = NULL;
+    //这里是重点
     hs_error_t error = hs_compile_multi((const char **)patterns, flags, ids, num_patterns, HS_MODE_BLOCK, NULL, &(hspm->db), &compile_error);
 
     free(patterns);
@@ -1787,6 +2003,10 @@ int dpi_dlp_hs_compile(dpi_hyperscan_pm_t *hspm, dpi_detector_t *detector) {
 ```
 
 正则表达式的来源是**hspm->hs_patterns模式数组**，全局范围内查找hs_patterns的创建和赋值。
+
+
+
+#### 3、剖析hspm->hs_patterns模式数组源头
 
 创建操作：dpi_hs_create
 
@@ -1817,6 +2037,8 @@ search->search_api->add_sig(search->context, sig);--回调函数
 dpi_dlp_hs_search_add_dlprule 
 
 ​	-> dpi_dlp_hs_add_pattern
+
+
 
 ### 1、dpi_dlp_hs_search_add_dlprule
 
@@ -2182,9 +2404,9 @@ static void dpi_dlp_hs_search_detect (void *context, void *packet)
 }
 ```
 
-调用函数dpi_dlp_hsdb_detect。
+在第12、17、22、27行分别调用函数dpi_dlp_hsdb_detect，然后对于DPI_SIG_CONTEXT_CLASS_NC类型的nc_sigs，遍历列表将其加入candidates（DPI_SIG_CONTEXT_CLASS_NC）
 
-```
+```c
 static void
 dpi_dlp_hsdb_detect (dpi_hs_search_t *hs_search, dpi_packet_t *p, dpi_sig_context_type_t t)
 {
@@ -2202,10 +2424,10 @@ dpi_dlp_hsdb_detect (dpi_hs_search_t *hs_search, dpi_packet_t *p, dpi_sig_contex
     ctx.hs_search = &hs_search;
     ctx.pm = hs_search->data[c].hs_pm;
     ctx.pkt = &p;
-    ctx.proc_sa = dpi_dlp_hs_proc_sa;
+    ctx.proc_sa = dpi_dlp_hs_proc_sa;//设置回调函数
 
     if (detector->dlp_hs_mpse_scan_scratch == NULL) {
-        HyperscanActivateMpse((void *)detector);
+        HyperscanActivateMpse((void *)detector);//激活mpse
     }
 
     error = hs_scan(hs_search->data[c].hs_pm->db, (const char *)buf, len, 0,
@@ -2214,6 +2436,8 @@ dpi_dlp_hsdb_detect (dpi_hs_search_t *hs_search, dpi_packet_t *p, dpi_sig_contex
 ```
 
 函数的末尾调用了hs_scan函数，这个是通用的hyperscan匹配函数。
+
+
 
 ## 6、4 Candidate候选流程
 
@@ -2227,11 +2451,7 @@ dpi_dlp_hsdb_detect (dpi_hs_search_t *hs_search, dpi_packet_t *p, dpi_sig_contex
 
 
 
-TODO：
-
-Q：进行了两次匹配，这两次匹配有什么不同吗？
-
-
+TODO：进行了两次匹配，这两次匹配有什么不同吗？
 
 ```c
 static int
@@ -2662,6 +2882,10 @@ ingress 和 egress是如何来处理的，
 
 
 如何判断是tap设备，这块也是我需要好好理解的。
+
+
+
+
 
 # 参考资料：
 
