@@ -21,4 +21,5 @@ apt install python3-pip
 学东西主要是为了解决心中的疑问，
 
 uio比vfio的优点和缺点是什么?
+vfio的学习目的是什么？
 
