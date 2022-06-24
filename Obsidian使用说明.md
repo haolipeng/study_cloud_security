@@ -117,9 +117,9 @@ Ctrl + Shift + D 唤出高级表格插件的空子面板
 | 细节体验 | OBSIDIAN PANGU | 通过快捷键 Comman+Shift+s 可以使得英文跟中文之前强制出现空格 |
 | 体验增强 | [obsidian-admonition](https://github.com/valentine195/obsidian-admonition) | 警告样式块 |
 | 体验增强 | [obsidian-icon-folder](https://github.com/FlorianWoelki/obsidian-icon-folder) | 允许将图标添加到文件夹 |
-|  |  | - |
-|  |  | - |
-|  |  | - |
+| 改善超链接 | Paste URL into Selection | - |
+| 改善超链接 | Auto Link Title | - |
+| markdow更统一 | **Markdown Prettifier** | - |
 |  |  | - |
 |  |  | - |
 |  |  | - |
