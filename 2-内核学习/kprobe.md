@@ -1,3 +1,5 @@
+#trace/kprobe
+
 Linux kprobes调试技术是内核开发者们专门为了便于跟踪内[核函数](https://so.csdn.net/so/search?q=%E6%A0%B8%E5%87%BD%E6%95%B0&spm=1001.2101.3001.7020)执行状态所设计的一种轻量级内核调试技术。利用kprobes技术，内核开发人员可以在内核的绝大多数指定函数中动态的插入探测点来收集所需的调试状态信息而基本不影响内核原有的执行流程。kprobes技术目前提供了3种探测手段：kprobe、jprobe和kretprobe，其中jprobe和kretprobe是基于kprobe实现的，他们分别应用于不同的探测场景中。本文首先简单描述这3种探测技术的原理与区别，然后主要围绕其中的kprobe技术进行分析并给出一个简单的实例介绍如何利用kprobe进行内核函数探测，最后分析kprobe的实现过程（jprobe和kretprobe会在后续的博文中进行分析）。
 
 内核源码：Linux-4.1.15

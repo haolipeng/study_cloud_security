@@ -1,1 +1,2 @@
+#trace/systemtap
 #todo systemtap
