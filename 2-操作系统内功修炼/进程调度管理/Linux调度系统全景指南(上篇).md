@@ -283,13 +283,13 @@ workqueue 中几个角色关系：
 
 ![图片](img/640-165158978948928.png)
 
-#define in\_irq()     (hardirq\_count()) //在处理硬中断中
+\#define in\_irq()     (hardirq\_count()) //在处理硬中断中
 
-#define in\_softirq()     (softirq\_count()) //在处理软中断中
+\#define in\_softirq()     (softirq\_count()) //在处理软中断中
 
-#define in\_interrupt()   (irq\_count()) //在处理硬中断或软中断中
+\#define in\_interrupt()   (irq\_count()) //在处理硬中断或软中断中
 
-#define in\_atomic()     ((preempt\_count() & ~PREEMPT\_ACTIVE) != 0) //包含以上所有情况
+\#define in\_atomic()     ((preempt\_count() & ~PREEMPT\_ACTIVE) != 0) //包含以上所有情况
 
 **总结和注意的点：**  
 

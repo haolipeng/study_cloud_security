@@ -5,6 +5,8 @@ tags:
 date created: Wednesday, March 30th 2022,3:15:57 pm
 date modified: Sunday, April 10th 2022, 12:30:56 pm
 ---
+此文档是windows系统的使用手册。
+
 ## 1. 介绍
 
 - [Obsidian](https://obsidian.md/) 是一款支持 Zettelkasten 笔记法的笔记管理软件，它同时支持 Windows、Mac 和 Linux 三大平台。
@@ -29,17 +31,17 @@ Ctrl + Shift + D 唤出高级表格插件的空子面板
 
 | 快捷键 | 说明 |
 | ---- | ---- |
-| Command+E | 编辑模式/阅读模式切换 |
-| Command+Enter | 待办事项状态切换 |
-| Command+Shift+F | 查找 |
-| Command+P | 调出命令窗口 |
-| Command+O | 快速打开笔记 |
+| Ctrl+E | 编辑模式/阅读模式切换 |
+| Ctrl+Enter | 待办事项状态切换 |
+| Ctrl+Shift+F | 查找 |
+| Ctrl+P | 调出命令窗口 |
+| Ctrl+O | 快速打开笔记 |
 
 ### 2.2. 反向链接
 
-- `[[档名]]`
-- `[[档名#标题名]]`
-- `[[档名#标题名|显示文字]]`
+- `[[文档名]]`
+- `[[文档名#标题名]]`
+- `[[文档名#标题名|显示文字]]`
 
 ### 2.3. 待办事项
 
@@ -59,9 +61,8 @@ Ctrl + Shift + D 唤出高级表格插件的空子面板
 - 用于在文章开头用 yaml 设定笔记的属性
 - 必须在笔记最开头，以三个 `---` 开始，三个 `---` 结束
 
-### 2.5. 快速简历索引笔记
+### 2.5. 标签
 
-根据标签检索，复制检索结果即可。
 
 ## 3. 第三方插件推荐
 
@@ -131,7 +132,7 @@ Ctrl + Shift + D 唤出高级表格插件的空子面板
 
 - 正文中如果出现 `#字符 `，会被 obsidian 当作标签，所以要对#进行转义，或者用特殊符号包裹起来
 
-## 5. Summary
+## 5.Summary
 
 1. 痛点：插件之间无法联动，比如，我安装了一个格式化插件，在按下Command+Shift+S的时候自动进行格式化，而实际上我期望在我按Command+S的时候就可以自动替我把Command+Shift+S也进行。
 

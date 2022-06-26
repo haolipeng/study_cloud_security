@@ -411,7 +411,7 @@ const char *format_host(int af, int len, const void *addr)
 
 net_udp_open宏
 
-#define net_udp_open()		generic_proc_open("PROC_NET_UDP", "net/udp")
+\#define net_udp_open()		generic_proc_open("PROC_NET_UDP", "net/udp")
 
 ```
 static FILE *generic_proc_open(const char *env, const char *name)

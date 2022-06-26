@@ -550,7 +550,7 @@ typedef struct dpi_packet_ {
 
 默认candidates是256
 
-#define DPI_MAX_MATCH_CANDIDATE  256
+\#define DPI_MAX_MATCH_CANDIDATE  256
 
 
 
@@ -2837,7 +2837,7 @@ static int make_named_socket(const char *filename)
 
 从make_named_socket函数可知，g_ctrl_fd是Unix Domain套接字，路径为DP_SERVER_SOCK 
 
-#define DP_SERVER_SOCK "/tmp/dp_listen.sock"
+\#define DP_SERVER_SOCK "/tmp/dp_listen.sock"
 
 
 
