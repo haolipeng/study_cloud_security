@@ -6,7 +6,9 @@
 
 
 
-![image-20220624103427633](picture/image-20220624103427633.png)
+![image-20220624103427633](../picture/image-20220624103427633.png)
+
+主要是分为四步的简单步骤。
 
 1、搭建个httpd或nginx服务（ok）
 
@@ -15,14 +17,6 @@
 3、模拟waf攻击进行测试（ok）
 
 4、如何来验证（日志路径和格式给牛超说一下）
-
-waf id srcport dstport cnt
-
-
-
-4、json字段的含义
-
-dp -n 1 allinone模式来运行，就是这样
 
 
 
@@ -34,7 +28,7 @@ dpi_dlp_detect_update
 
 ep和dlp_detect是一种什么关系，以及如何梳理这种关系呢？
 
-![Architecture](picture/architecture.png)
+![Architecture](../picture/architecture.png)
 
 # 1、设置debug开关
 
