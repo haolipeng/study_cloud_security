@@ -6,7 +6,9 @@
 docker cp allinone_5.0.0:/usr/local/bin /root/neuvector_5.0.0/bin
 ```
 
-将容器中的
+将allinone容器启动。
+
+
 
 # 一、远程调试agent
 
@@ -18,14 +20,7 @@ Neuvector的enforcer容器中默认会处于NVProtect模式，用户进入容器后输入一些敏感命令
 
 ## 1、1 重新编译agent
 
-编译参数修改
-go build -gcflags='-N -l'
-
-
-
-对agent代码进行修改，删除所有调用syscall.Kill的代码片段。
-
-涉及到的文件有：
+对agent代码进行修改，删除所有调用syscall.Kill的代码片段。涉及的文件如下：
 
 ### 1） agent删除调用syscall.Kill
 
@@ -33,13 +28,49 @@ go build -gcflags='-N -l'
 
 ### 2） agent删除对dp的健康检查
 
-在agent的cbKeepAlive函数。
+在agent的cbKeepAlive函数，直接在函数的开始处返回true，标明检查一直是成功的。
 
 
 
 ### 3）monitor删除对dp监控
 
+将PROC_DP变量所在的代码行删除。
+
 删除monitor中监控dp的代码，并注释掉stop_proc(PROC_DP, SIGSEGV, false);函数
+
+
+
+### 4）修改go构建标志gcflags
+
+**修改agent的makefile中编译参数为 go build -gcflags='-N -l'**
+
+然后重新执行make命令。
+
+
+
+## 1、2 dlv启动agent
+
+```shell
+dlv --headless=true --listen=:2345 --api-version=2 --accept-multiclient exec /usr/local/bin/agent -- -c
+```
+
+-c 选项是Coexist controller and ranger，默认情况下，agent也是这么启动的。
+
+
+
+```
+dlv --headless=true --listen=:2345 --api-version=2 --accept-multiclient exec /usr/local/bin/agent -- -j 10.240.19.222
+```
+
+最好是将dlv的命令行写入到supervisor
+
+
+
+## 1、3 配置Goland IDE
+
+在remote debug configuration中设置dlv的端口，然后就可以开始调试了。
+
+![image-20220627175232697](picture/image-20220627175232697.png)
 
 
 
@@ -164,8 +195,6 @@ apk add vim
 
 **alpine系统安装gdb(调试dp)**
 
-![image-20220616141001775](picture/image-20220616141001775.png)
-
 ```
 apk add gdb
 ```
@@ -212,31 +241,68 @@ docker cp allinone_5.0.0:/usr/local/bin  /root/neuvector_5.0.0/bin
 
 
 
-## 2、dlv方式来启动agent进程
-
-修改agent的makefile中编译参数为
-
-dlv --headless=true --listen=:2345 --api-version=2 --accept-multiclient exec /usr/local/bin/agent -- -j 192.168.101.97
-
-
-
-## 3、配置Goland IDE
-
-在remote debug configuration中设置dlv的端口，然后就可以开始调试了。
-
-
-
-## 4、gdb或gdbserver方式来启动dp进程
+## 3、gdb或gdbserver方式来启动dp进程
 
 allinone容器启动Neuvector的方式是，利用supervisor来启动monitor进程，
 
-![image-20220621132735757](picture/image-20220621132735757.png)
+![image-20220621132735757](../picture/image-20220621132735757.png)
 
 
 
-## 5、配置clion IDE
+## 4、配置clion IDE
 
 
 
 https://github.com/vishvananda/netlink
 netlink还是需要好好的熟悉下。linux上很多的命令和工具都是采用netlink来实现的。
+
+
+
+修改/etc/profile的内容，用于调试。
+
+添加配置文件。
+
+```
+//模拟控制通道数据
+/*
+void simulate_ctr_data()
+{
+    json_t *root;
+    json_error_t error;
+    int ret = 0;
+
+    //1.load ctrl_add_mac.json
+    //2.load ctrl_cfg_mac.json
+    //3.load ctrl_cfg_policy.json
+    //4.load ctrl_cfg_dlp.json
+    //5.load ctrl_bld_dlp.json
+
+    char* jsonArray[5] = {"ctrl_add_mac.json","ctrl_cfg_mac.json", "ctrl_cfg_policy.json", "ctrl_cfg_dlp.json", "ctrl_bld_dlp.json"};
+    for(int i=0;i<5;i++)
+    {
+        char*fileName = jsonArray[i];
+        root = json_load_file(fileName,0,&error);
+
+        const char *key;
+        json_t *msg;
+        json_object_foreach(root, key, msg) {
+            if (strcmp(key, "ctrl_add_mac") == 0) {
+                ret = dp_ctrl_add_mac(msg);
+            }else if (strcmp(key, "ctrl_cfg_mac") == 0) {
+                ret = dp_ctrl_cfg_mac(msg);
+            } else if (strcmp(key, "ctrl_cfg_policy") == 0) {
+                ret = dp_ctrl_cfg_policy(msg);
+            } else if (strcmp(key, "ctrl_cfg_dlp") == 0) {
+                ret = dp_ctrl_cfg_dlp(msg);
+            }else if (strcmp(key, "ctrl_bld_dlp") == 0) {
+                ret = dp_ctrl_bld_dlp(msg);
+            }else{
+                printf("error is happened");
+            }
+        }
+    }
+    printf("result:%d\n",ret);
+}
+*/
+```
+
