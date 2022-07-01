@@ -74,7 +74,202 @@ vex362a-eth0@if5代表,vex362a-eth0直连vin362a-eth0接口。
 
 
 
-InterceptContainerPorts
+# 二、traffic control 规则
+
+搞清楚这里面的mac地址都是哪里来的？
+
+mac是容器的。设置的bcmac和ucmac是基于什么来计算的？
+
+
+
+pair.MAC
+
+mac: 02:42:ac:11:00:03
+bcmac: ff:ff:ff:00:00:07
+ucmac: 4e:65:75:56:00:07
+
+看着这个ucmac好眼熟啊。
+
+
+
+mac: 02:42:ac:11:00:04
+
+bcmac: ff:ff:ff:00:00:09
+ucmac: 4e:65:75:56:00:09
+
+dp_data_thr: epoll error: vth-neuv
+
+
+
+Queueing Discipline (qdisc，排队规则)
+
+
+
+
+
+查看tc的规则
+
+规则已经弄了，但是发现自己
+
+规则1
+
+// Ingress --
+	// Bypass multicast
+	// fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
+	// 	"u32 match u8 1 1 at -14 "+
+	// 	"action mirred egress mirror dev %v", pair.exPort, tcPrefBase, pair.inPort)
+
+// Forward IP packet, forward unicast packet with DA to the workload
+
+```shell
+tc filter add dev vex5fe4-eth0 pref 10001 parent ffff: protocol ip 
+u32 match u8 0 1 at -14 
+match u16 0x0242 0xffff at -14 
+match u32 0xac110004 0xffffffff at -12 
+action pedit munge offset -14 u16 set 0x4e65 munge offset -12 u32 set 0x7556001b pipe action mirred egress mirror dev vbr-neuv
+```
+
+mirred操作允许对接收到数据包进行镜像或重定向。
+
+
+
+对应代码为
+
+```
+cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol ip "+
+		"u32 match u8 0 1 at -14 "+
+		"match u16 0x%02x%02x 0xffff at -14 match u32 0x%02x%02x%02x%02x 0xffffffff at -12 "+
+		"action pedit munge offset -14 u16 set 0x%02x%02x munge offset -12 u32 set 0x%02x%02x%02x%02x pipe "+
+		"action mirred egress mirror dev %v",
+		pair.exPort, tcPrefBase+1,
+		pair.MAC[0], pair.MAC[1], pair.MAC[2], pair.MAC[3], pair.MAC[4], pair.MAC[5],
+		pair.UCMAC[0], pair.UCMAC[1], pair.UCMAC[2], pair.UCMAC[3], pair.UCMAC[4], pair.UCMAC[5],
+		nvVbrPortName)
+```
+
+
+
+规则2
+
+// Forward the rest
+
+```shell
+tc filter add dev vex63fb-eth0 pref 10002 parent ffff: protocol all 
+u32 match u8 0 0 
+action mirred egress mirror dev vin63fb-eth0
+```
+
+对应的代码为
+
+```
+cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
+		"u32 match u8 0 0 "+
+		"action mirred egress mirror dev %v",
+		pair.exPort, tcPrefBase+2, pair.inPort)
+```
+
+
+
+规则3
+
+```
+// Egress --
+	// Bypass multicast
+	// fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
+	// 	"u32 match u8 1 1 at -14 "+
+	// 	"action mirred egress mirror dev %v", pair.inPort, tcPrefBase, pair.exPort)
+
+	// Forward IP packet, forward unicast packet with SA from the workload
+```
+
+```
+tc filter add dev vin63fb-eth0 pref 10001 parent ffff: protocol ip u32 match u8 0 1 at -14 match u32 0x0242ac11 0xffffffff at -8 match u16 0x0005 0xffff at -4 action pedit munge offset -8 u32 set 0x4e657556 munge offset -4 u16 set 0x001d pipe action mirred egress mirror dev vbr-neuv
+```
+
+对应的代码为：
+
+```
+cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol ip "+
+		"u32 match u8 0 1 at -14 "+
+		"match u32 0x%02x%02x%02x%02x 0xffffffff at -8 match u16 0x%02x%02x 0xffff at -4 "+
+		"action pedit munge offset -8 u32 set 0x%02x%02x%02x%02x munge offset -4 u16 set 0x%02x%02x pipe "+
+		"action mirred egress mirror dev %v",
+		pair.inPort, tcPrefBase+1,
+		pair.MAC[0], pair.MAC[1], pair.MAC[2], pair.MAC[3], pair.MAC[4], pair.MAC[5],
+		pair.UCMAC[0], pair.UCMAC[1], pair.UCMAC[2], pair.UCMAC[3], pair.UCMAC[4], pair.UCMAC[5],
+		nvVbrPortName)
+```
+
+
+
+规则4
+
+// Forward the rest
+
+```
+tc filter add dev vin63fb-eth0 pref 10002 parent ffff: protocol all u32 match u8 0 0 action mirred egress mirror dev vex63fb-eth0
+```
+
+对应的代码为
+
+```
+cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
+		"u32 match u8 0 0 "+
+		"action mirred egress mirror dev %v",
+		pair.inPort, tcPrefBase+2, pair.exPort)
+```
+
+
+
+规则5 
+
+// Forward the packets from enforcer
+
+规则5.1
+
+```
+tc filter add dev vbr-neuv pref 29 parent ffff: protocol all u32 match u16 0x4e65 0xffff at -14 match u32 0x7556001d 0xffffffff at -12 action pedit munge offset -14 u16 set 0x0242 munge offset -12 u32 set 0xac110005 pipe action mirred egress mirror dev vin63fb-eth0
+```
+
+对应的代码为
+
+```
+cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
+		"u32 match u16 0x%02x%02x 0xffff at -14 match u32 0x%02x%02x%02x%02x 0xffffffff at -12 "+
+		"action pedit munge offset -14 u16 set 0x%02x%02x munge offset -12 u32 set 0x%02x%02x%02x%02x pipe "+
+		"action mirred egress mirror dev %v",
+		nvVbrPortName, exInfo.pref,
+		pair.UCMAC[0], pair.UCMAC[1], pair.UCMAC[2], pair.UCMAC[3], pair.UCMAC[4], pair.UCMAC[5],
+		pair.MAC[0], pair.MAC[1], pair.MAC[2], pair.MAC[3], pair.MAC[4], pair.MAC[5],
+		pair.inPort)
+```
+
+
+
+规则5.2
+
+```
+tc filter add dev vbr-neuv pref 30 parent ffff: protocol all u32 match u32 0x4e657556 0xffffffff at -8 match u16 0x001d 0xffff at -4 action pedit munge offset -8 u32 set 0x0242ac11 munge offset -4 u16 set 0x0005 pipe action mirred egress mirror dev vex63fb-eth0
+```
+
+对应的代码为
+
+```
+cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
+		"u32 match u32 0x%02x%02x%02x%02x 0xffffffff at -8 match u16 0x%02x%02x 0xffff at -4 "+
+		"action pedit munge offset -8 u32 set 0x%02x%02x%02x%02x munge offset -4 u16 set 0x%02x%02x pipe "+
+		"action mirred egress mirror dev %v",
+		nvVbrPortName, inInfo.pref,
+		pair.UCMAC[0], pair.UCMAC[1], pair.UCMAC[2], pair.UCMAC[3], pair.UCMAC[4], pair.UCMAC[5],
+		pair.MAC[0], pair.MAC[1], pair.MAC[2], pair.MAC[3], pair.MAC[4], pair.MAC[5],
+		pair.exPort)
+```
+
+
+
+# 三、源代码解读
+
+InterceptContainerPorts函数
 
 初始化并创建vin和vex接口的函数
 
@@ -82,7 +277,7 @@ InterceptContainerPorts
 
 TapPortPair
 
-很重要。
+这个函数也挺重要。
 
 
 

@@ -262,47 +262,23 @@ netlink还是需要好好的熟悉下。linux上很多的命令和工具都是采用netlink来实现的。
 
 添加配置文件。
 
-```
-//模拟控制通道数据
-/*
-void simulate_ctr_data()
-{
-    json_t *root;
-    json_error_t error;
-    int ret = 0;
 
-    //1.load ctrl_add_mac.json
-    //2.load ctrl_cfg_mac.json
-    //3.load ctrl_cfg_policy.json
-    //4.load ctrl_cfg_dlp.json
-    //5.load ctrl_bld_dlp.json
 
-    char* jsonArray[5] = {"ctrl_add_mac.json","ctrl_cfg_mac.json", "ctrl_cfg_policy.json", "ctrl_cfg_dlp.json", "ctrl_bld_dlp.json"};
-    for(int i=0;i<5;i++)
-    {
-        char*fileName = jsonArray[i];
-        root = json_load_file(fileName,0,&error);
+五、程序日志初始化
 
-        const char *key;
-        json_t *msg;
-        json_object_foreach(root, key, msg) {
-            if (strcmp(key, "ctrl_add_mac") == 0) {
-                ret = dp_ctrl_add_mac(msg);
-            }else if (strcmp(key, "ctrl_cfg_mac") == 0) {
-                ret = dp_ctrl_cfg_mac(msg);
-            } else if (strcmp(key, "ctrl_cfg_policy") == 0) {
-                ret = dp_ctrl_cfg_policy(msg);
-            } else if (strcmp(key, "ctrl_cfg_dlp") == 0) {
-                ret = dp_ctrl_cfg_dlp(msg);
-            }else if (strcmp(key, "ctrl_bld_dlp") == 0) {
-                ret = dp_ctrl_bld_dlp(msg);
-            }else{
-                printf("error is happened");
-            }
-        }
-    }
-    printf("result:%d\n",ret);
-}
-*/
-```
+main.(*Bench).doDockerHostBench: Running benchmark checks done
+
+main.(*Bench).doDockerContainerBench: Running benchmark checks done
+
+main.(*Bench).doContainerCustomCheck: Running benchmark checks done
+
+做主机层面、容器层面的基线检查。
+
+
+
+main.taskAddContainer: - id=42234cc5128b9ff37f9739be63f1bac31c72ca514c9b2c26d20ebd087f082cd2 name=kind_wright
+
+main.taskAddContainer: - id=84e8ee60180561c8883ffd9fc859714d4f38a331827e78bf59bc41966a3bc737 name=amazing_visvesvaraya
+
+
 
