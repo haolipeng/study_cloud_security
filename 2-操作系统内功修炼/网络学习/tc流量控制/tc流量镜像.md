@@ -12,6 +12,30 @@ qdisc是什么？
 
 参考链接：
 
+**利用nc向IPv6地址指定端口发送数据**（正在搞）
+
+https://codeantenna.com/a/m9ck3uej6k
+
+
+
+Traffic Mirroring with Linux Tc
+
+https://medium.com/swlh/traffic-mirroring-with-linux-tc-df4d36116119
+
+
+
+Network Traffic Control with tc command in Linux
+
+https://www.softprayog.in/tutorials/network-traffic-control-with-tc-command-in-linux
+
+
+
+https://man7.org/linux/man-pages/man8/tc.8.html
+
+https://medium.com/swlh/traffic-mirroring-with-linux-tc-df4d36116119
+
+
+
 Linux Kernel TCP/IP Stack — L2 Layer — Traffic Control（流量控制） 
 
 https://blog.51cto.com/u_15301988/5181197
