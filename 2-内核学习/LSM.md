@@ -189,7 +189,7 @@ union security_list_options {
 
 
 
-三、编程步骤
+# 三、编程步骤
 
 程序员要做的事情，包括哪些？
 
@@ -203,7 +203,19 @@ union security_list_options {
 
 
 
-高手的LSM学习记录
+安装内核头文件
+
+```shell
+apt search linux-headers-$(uname -r)
+```
+
+
+
+参考链接
+
+https://onestraw.github.io/linux/lsm-example/
+
+
 
 https://zhangxin00.github.io/2021/11/15/Linux%E5%AE%89%E5%85%A8%E6%A8%A1%E5%9D%97-LSM-%E5%AD%A6%E4%B9%A0-%E7%AE%80%E5%8D%95%E7%9A%84LSM-demo/
 
