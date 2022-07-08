@@ -14,13 +14,18 @@ AppArmor解决了什么问题，和selinux相比是如何？
 
 ubuntu 20.04及以上版本，默认是自带AppArmor的。
 
+
+
 安装 AppArmor 用户空间工具：
 
-apparmor
+- apparmor
 
-apparmor-utils
+- apparmor-utils
 
-auditd(如果想使用配置文件自动生成工具)
+- auditd(如果想使用配置文件自动生成工具)
+
+
+apparmor-utils包含很多实用的工具，
 
 
 
@@ -92,6 +97,16 @@ Execute permissions 执行权限
 
 
 
+使用工具来生成和调试apparmor配置文件
+
+​	aa-complain
+
+​	aa-genprof
+
+
+
+ubuntu安装audit
+
 安装apparmor-utils
 
 如何使用AppArmor（规则编写）
@@ -99,6 +114,14 @@ Execute permissions 执行权限
 AppArmor解决什么问题
 
 AppArmor实现原理和源代码分析
+
+
+
+停止和删除所有的容器
+
+```
+docker container rm -f $(docker container ls -aq)
+```
 
 
 
@@ -125,6 +148,10 @@ https://gitlab.com/apparmor/apparmor/-/wikis/Profiles
 手动编写规则文件
 
 https://gitlab.com/apparmor/apparmor/-/wikis/Profiling_by_hand
+
+
+
+
 
 官网链接
 
