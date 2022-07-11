@@ -7,11 +7,29 @@ type tcPortInfo struct {
 
 idx是在enforcer网络命名空间中的端口索引
 
-问题：Neuvector的微隔离功能是否依赖于dp组件？dp组件在微隔离中，起到什么样的作用？
 
-问题：微隔离的原理到底是如何实现的？
 
-问题：SA和DA是什么？（待验证）
+老规矩，研究之前先提出问题，有目的的分析和研究才更有效果。
+
+问题1：Neuvector的微隔离功能是否依赖于dp组件？dp组件在微隔离中，起到什么样的作用？
+
+问题2：微隔离的原理到底是如何实现的？
+
+问题3：SA和DA是什么？（待验证）
+
+问题4：vin和vex接口之间的关系是什么？
+
+问题5：vbr-neuv和vth-neuv接口是起什么作用的？
+
+问题6：tc规则中的bcmac和ucmac代表什么意思？
+
+问题7：是每个业务容器都对应会创建一个vin和vex接口吗？需要做实验来好好验证下，新建两个容器，会有4个vin和vex接口吗？
+
+问题8：在vin、vex、vbr-neuv、vth-neuv等接口上进行抓包，然后分析。
+
+最好是能参考testplan.pdf上的测试计划进行测试。
+
+接下来，我们就上述几个问题，进行分析。
 
 
 
@@ -58,13 +76,35 @@ idx是在enforcer网络命名空间中的端口索引
 
 
 
+
+
 ## 1、3 vin和vex的关系
 
 ![image-20220524141400147](picture/image-20220524141400147.png)
 
-vin是一对veth pair，在Neuvector中是vin362a-eth0，vin362a-eth0@if106对应的是业务容器中的106接口索引。
+**enforcer容器接口结论：**
 
-vex362a-eth0@if5代表,vex362a-eth0直连vin362a-eth0接口。
+**5: vin362a-eth0@if106:**
+
+**6: vex362a-eth0@if5**
+
+**vex362a-eth0接口的对端veth索引是5，而vin362a-eth0接口的索引恰好是5，得出结论：**
+
+**vex362a-eth0直连vin362a-eth0接口。**
+
+
+
+转到业务容器中去查看下接口。
+
+```
+106: eth0@if5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1440 qdisc noqueue state UP group default qlen 1000
+    link/ether 5e:d7:54:1f:df:45 brd ff:ff:ff:ff:ff:ff link-netnsid 1 promiscuity 0 minmtu 68 maxmtu 65535
+    veth numtxqueues 1 numrxqueues 1 gso_max_size 65536 gso_max_segs 65535
+    inet 10.42.236.131/32 brd 10.42.236.131 scope global eth0
+       valid_lft forever preferred_lft forever
+```
+
+在业务容器中，接口索引为106的接口是eth0，其对端veth接口的索引是5，即vin362a-eth0
 
 
 
@@ -74,7 +114,11 @@ vex362a-eth0@if5代表,vex362a-eth0直连vin362a-eth0接口。
 
 搞清楚这里面的mac地址都是哪里来的？
 
-mac是容器的。设置的bcmac和ucmac是基于什么来计算的？
+mac是容器的。哪个容器的？
+
+设置的bcmac和ucmac是基于什么来计算的？
+
+bcmac和ucmac的作用是什么？
 
 
 
@@ -93,12 +137,6 @@ mac: 02:42:ac:11:00:04
 bcmac: ff:ff:ff:00:00:09
 ucmac: 4e:65:75:56:00:09
 
-dp_data_thr: epoll error: vth-neuv
-
-
-
-Queueing Discipline (qdisc，排队规则)
-
 
 
 ## 2、2 tc规则分析
@@ -115,14 +153,17 @@ Queueing Discipline (qdisc，排队规则)
 	// 	"u32 match u8 1 1 at -14 "+
 	// 	"action mirred egress mirror dev %v", pair.exPort, tcPrefBase, pair.inPort)
 
-// Forward IP packet, forward unicast packet with DA to the workload
+// Forward IP packet, forward unicast packet with DA to the workload 带有DA的组播数据转发给工作负载
 
 ```shell
 tc filter add dev vex5fe4-eth0 pref 10001 parent ffff: protocol ip 
 u32 match u8 0 1 at -14 
 match u16 0x0242 0xffff at -14 
 match u32 0xac110004 0xffffffff at -12 
-action pedit munge offset -14 u16 set 0x4e65 munge offset -12 u32 set 0x7556001b pipe action mirred egress mirror dev vbr-neuv
+action pedit 
+munge offset -14 u16 set 0x4e65 
+munge offset -12 u32 set 0x7556001b pipe 
+action mirred egress mirror dev vbr-neuv
 ```
 
 mirred操作允许对接收到数据包进行镜像或重定向。
@@ -134,14 +175,20 @@ mirred操作允许对接收到数据包进行镜像或重定向。
 ```
 cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol ip "+
 		"u32 match u8 0 1 at -14 "+
-		"match u16 0x%02x%02x 0xffff at -14 match u32 0x%02x%02x%02x%02x 0xffffffff at -12 "+
-		"action pedit munge offset -14 u16 set 0x%02x%02x munge offset -12 u32 set 0x%02x%02x%02x%02x pipe "+
+		"match u16 0x%02x%02x 0xffff at -14 
+		match u32 0x%02x%02x%02x%02x 0xffffffff at -12 "+
+		
+		"action pedit 
+		munge offset -14 u16 set 0x%02x%02x 
+		munge offset -12 u32 set 0x%02x%02x%02x%02x pipe "+
 		"action mirred egress mirror dev %v",
 		pair.exPort, tcPrefBase+1,
 		pair.MAC[0], pair.MAC[1], pair.MAC[2], pair.MAC[3], pair.MAC[4], pair.MAC[5],
 		pair.UCMAC[0], pair.UCMAC[1], pair.UCMAC[2], pair.UCMAC[3], pair.UCMAC[4], pair.UCMAC[5],
 		nvVbrPortName)
 ```
+
+pedit是通用的数据包编辑操作。
 
 
 
@@ -168,18 +215,40 @@ cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
 
 **规则3**
 
+规则1如下：
+
+```
+tc filter add dev vex5fe4-eth0 pref 10001 parent ffff: protocol ip 
+u32 match u8 0 1 at -14 
+match u16 0x0242 0xffff at -14 
+match u32 0xac110004 0xffffffff at -12 
+action pedit 
+munge offset -14 u16 set 0x4e65 
+munge offset -12 u32 set 0x7556001b pipe 
+action mirred egress mirror dev vbr-neuv
+```
+
+
+
 ```
 // Egress --
-	// Bypass multicast
-	// fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
-	// 	"u32 match u8 1 1 at -14 "+
-	// 	"action mirred egress mirror dev %v", pair.inPort, tcPrefBase, pair.exPort)
+// Bypass multicast
+// fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
+// 	"u32 match u8 1 1 at -14 "+
+// 	"action mirred egress mirror dev %v", pair.inPort, tcPrefBase, pair.exPort)
 
-	// Forward IP packet, forward unicast packet with SA from the workload
+// Forward IP packet, forward unicast packet with SA from the workload
 ```
 
 ```
-tc filter add dev vin63fb-eth0 pref 10001 parent ffff: protocol ip u32 match u8 0 1 at -14 match u32 0x0242ac11 0xffffffff at -8 match u16 0x0005 0xffff at -4 action pedit munge offset -8 u32 set 0x4e657556 munge offset -4 u16 set 0x001d pipe action mirred egress mirror dev vbr-neuv
+tc filter add dev vin63fb-eth0 pref 10001 parent ffff: protocol ip 
+u32 match u8 0 1 at -14 
+match u32 0x0242ac11 0xffffffff at -8 
+match u16 0x0005 0xffff at -4 
+action pedit 
+munge offset -8 u32 set 0x4e657556 
+munge offset -4 u16 set 0x001d pipe
+action mirred egress mirror dev vbr-neuv
 ```
 
 对应的代码为：
@@ -224,7 +293,13 @@ cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
 **规则5.1**
 
 ```
-tc filter add dev vbr-neuv pref 29 parent ffff: protocol all u32 match u16 0x4e65 0xffff at -14 match u32 0x7556001d 0xffffffff at -12 action pedit munge offset -14 u16 set 0x0242 munge offset -12 u32 set 0xac110005 pipe action mirred egress mirror dev vin63fb-eth0
+tc filter add dev vbr-neuv pref 29 parent ffff: protocol all 
+u32 match u16 0x4e65 0xffff at -14 
+match u32 0x7556001d 0xffffffff at -12 
+action pedit 
+munge offset -14 u16 set 0x0242 
+munge offset -12 u32 set 0xac110005 pipe 
+action mirred egress mirror dev vin63fb-eth0
 ```
 
 对应的代码为
@@ -245,7 +320,13 @@ cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
 **规则5.2**
 
 ```
-tc filter add dev vbr-neuv pref 30 parent ffff: protocol all u32 match u32 0x4e657556 0xffffffff at -8 match u16 0x001d 0xffff at -4 action pedit munge offset -8 u32 set 0x0242ac11 munge offset -4 u16 set 0x0005 pipe action mirred egress mirror dev vex63fb-eth0
+tc filter add dev vbr-neuv pref 30 parent ffff: protocol all 
+u32 match u32 0x4e657556 0xffffffff at -8 
+match u16 0x001d 0xffff at -4
+action pedit 
+munge offset -8 u32 set 0x0242ac11
+munge offset -4 u16 set 0x0005 pipe 
+action mirred egress mirror dev vex63fb-eth0
 ```
 
 对应的代码为
@@ -268,12 +349,6 @@ cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
 InterceptContainerPorts函数
 
 初始化并创建vin和vex接口的函数
-
-
-
-TapPortPair
-
-这个函数也挺重要。
 
 
 
@@ -378,11 +453,6 @@ func pullContainerPort(
 		log.WithFields(log.Fields{"error": err}).Error("Error in creating veth pair")
 		return 0, err
 	}
-	defer func() {
-		if err != nil {
-			netlink.LinkDel(veth)
-		}
-	}()
 
 	log.WithFields(log.Fields{"port": attrs.Name}).Debug("Setting up local port")
 
@@ -473,14 +543,6 @@ vbr-neuv和vex是如何建立关系的
 
 vbr-neuv和veth-neuv的关系
 
-main函数中，非tc模式下，先删除veth-neuv再重新创建
-
-```
-else if (strcmp(key, "ctrl_del_srvc_port") == 0) {
-    ret = dp_ctrl_del_srvc_port(msg);
-}
-```
-
 
 
 对于数据流程的分析
@@ -525,6 +587,8 @@ cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
 dp.DPCtrlAddMAC(nvSvcPort, pair.MAC, pair.UCMAC, pair.BCMAC, oldMAC, pMAC, nil)
 
 
+
+# 四、proxymesh下的流量分析
 
 proxymesh的规则如下
 
@@ -581,6 +645,10 @@ service mesh服务网格是通过iptables queue实现去进行微隔离的。
 
 
 **备注：**
+
+Queueing Discipline (qdisc，排队规则)
+
+
 
 所有前端web api的处理都在rest.go文件。
 
