@@ -31,6 +31,10 @@ kubectl create clusterrole neuvector-binding-nvdlpsecurityrules --verb=list,dele
 kubectl create clusterrolebinding neuvector-binding-nvdlpsecurityrules --clusterrole=neuvector-binding-nvdlpsecurityrules --serviceaccount=neuvector:default
 ```
 
+注意事项：
+
+ neuvector.yaml 文件中指定的 nodeport 服务，将在所有 kubernetes 节点打开一个随机端口，作为 NeuVector 管理 Web 控制台端口。
+
 
 
 # 一、远程调试agent

@@ -379,3 +379,4 @@ https://blog.neuvector.com/article/enforce-egress-control-containers
 
 
 为了实现这一点，我们可以使用 NeuVector 深度数据包检测 (DPI)功能和数据丢失防护 (DLP) 功能来检查出站连接中的 http 标头，并在阻止 oracle.com 的同时允许 morninstar.com。
+

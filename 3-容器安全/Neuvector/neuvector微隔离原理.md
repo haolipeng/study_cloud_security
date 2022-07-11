@@ -1,7 +1,3 @@
-如何打开所有的debug日志？
-
-在main.c文件中更改log.InfoLevel为DebugLevel
-
 ```
 type tcPortInfo struct {
    idx  uint // port index in enforcer network namespace
@@ -11,13 +7,11 @@ type tcPortInfo struct {
 
 idx是在enforcer网络命名空间中的端口索引
 
-问题：Neuvector的微隔离功能是否依赖于dp组件？
+问题：Neuvector的微隔离功能是否依赖于dp组件？dp组件在微隔离中，起到什么样的作用？
 
 问题：微隔离的原理到底是如何实现的？
 
-问题：SA和DA是什么？
-
-
+问题：SA和DA是什么？（待验证）
 
 
 
@@ -76,6 +70,8 @@ vex362a-eth0@if5代表,vex362a-eth0直连vin362a-eth0接口。
 
 # 二、traffic control 规则
 
+## 2、1 tc中mac地址分析
+
 搞清楚这里面的mac地址都是哪里来的？
 
 mac是容器的。设置的bcmac和ucmac是基于什么来计算的？
@@ -105,13 +101,13 @@ Queueing Discipline (qdisc，排队规则)
 
 
 
-
+## 2、2 tc规则分析
 
 查看tc的规则
 
 规则已经弄了，但是发现自己
 
-规则1
+**规则1**
 
 // Ingress --
 	// Bypass multicast
@@ -149,7 +145,7 @@ cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol ip "+
 
 
 
-规则2
+**规则2**
 
 // Forward the rest
 
@@ -170,7 +166,7 @@ cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
 
 
 
-规则3
+**规则3**
 
 ```
 // Egress --
@@ -202,7 +198,7 @@ cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol ip "+
 
 
 
-规则4
+**规则4**
 
 // Forward the rest
 
@@ -221,11 +217,11 @@ cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
 
 
 
-规则5 
+**规则5** 
 
 // Forward the packets from enforcer
 
-规则5.1
+**规则5.1**
 
 ```
 tc filter add dev vbr-neuv pref 29 parent ffff: protocol all u32 match u16 0x4e65 0xffff at -14 match u32 0x7556001d 0xffffffff at -12 action pedit munge offset -14 u16 set 0x0242 munge offset -12 u32 set 0xac110005 pipe action mirred egress mirror dev vin63fb-eth0
@@ -246,7 +242,7 @@ cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
 
 
 
-规则5.2
+**规则5.2**
 
 ```
 tc filter add dev vbr-neuv pref 30 parent ffff: protocol all u32 match u32 0x4e657556 0xffffffff at -8 match u16 0x001d 0xffff at -4 action pedit munge offset -8 u32 set 0x0242ac11 munge offset -4 u16 set 0x0005 pipe action mirred egress mirror dev vex63fb-eth0
@@ -530,11 +526,7 @@ dp.DPCtrlAddMAC(nvSvcPort, pair.MAC, pair.UCMAC, pair.BCMAC, oldMAC, pMAC, nil)
 
 
 
-先把这几天的东西好好记录下。
-
 proxymesh的规则如下
-
-
 
 ```shell
 :INPUT ACCEPT [37:3477]
@@ -588,6 +580,8 @@ service mesh服务网格是通过iptables queue实现去进行微隔离的。
 
 
 
+**备注：**
+
 所有前端web api的处理都在rest.go文件。
 
 
@@ -603,5 +597,3 @@ dp在学习阶段会解析数据包并记录网络规则。
 切换成保护模式容器就会调用changeContainerWire方法
 
 流量抓取先优先搞，简单的规则分析。
-
-waf:crd xxxxx custom resource define 规则弄出来。
