@@ -89,7 +89,7 @@ dlv --headless=true --listen=:2345 --api-version=2 --accept-multiclient exec /us
 dlv --headless=true --listen=:2345 --api-version=2 --accept-multiclient exec /usr/local/bin/agent -- -j 10.240.19.222
 ```
 
-最好是将dlv的命令行写入到supervisor
+最好是将dlv的命令行写入到supervisor（这块我也尝试了，感觉也一般）
 
 
 
@@ -291,7 +291,7 @@ netlink还是需要好好的熟悉下。linux上很多的命令和工具都是采用netlink来实现的。
 
 
 
-五、程序日志初始化
+# 五、程序日志初始化
 
 main.(*Bench).doDockerHostBench: Running benchmark checks done
 

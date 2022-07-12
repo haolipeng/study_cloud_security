@@ -31,56 +31,44 @@ idx是在enforcer网络命名空间中的端口索引
 
 接下来，我们就上述几个问题，进行分析。
 
+设置规则和没设置规则的区别在哪里？
+
 
 
 # 一、现象
 
 ## 1、1 enforcer容器接口情况
 
-3: **eth0@if11**: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1440 qdisc noqueue state UP group default
-    link/ether e6:95:9d:6e:ef:fc brd ff:ff:ff:ff:ff:ff link-netnsid 0 promiscuity 0 minmtu 68 maxmtu 65535
-    veth numtxqueues 1 numrxqueues 1 gso_max_size 65536 gso_max_segs 65535
-    inet 10.42.236.139/32 brd 10.42.236.139 scope global eth0
-       valid_lft forever preferred_lft forever
-4: **tunl0@NONE**: <NOARP> mtu 1480 qdisc noop state DOWN group default qlen 1000
-    link/ipip 0.0.0.0 brd 0.0.0.0 promiscuity 0 minmtu 0 maxmtu 0
-    ipip any remote any local any ttl inherit nopmtudisc numtxqueues 1 numrxqueues 1 gso_max_size 65536 gso_max_segs 65535
-5: **vin362a-eth0@if106**: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1440 qdisc noqueue state UP group default qlen 1000
-    link/ether 5e:30:b6:b8:72:be brd ff:ff:ff:ff:ff:ff link-netnsid 1 promiscuity 0 minmtu 68 maxmtu 65535
-    veth numtxqueues 1 numrxqueues 1 gso_max_size 65536 gso_max_segs 65535
-6: **vex362a-eth0@if5**: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1440 qdisc noqueue state UP group default qlen 1000
-    link/ether 42:c1:b2:cc:20:82 brd ff:ff:ff:ff:ff:ff link-netnsid 0 promiscuity 0 minmtu 68 maxmtu 65535
-    veth numtxqueues 1 numrxqueues 1 gso_max_size 65536 gso_max_segs 65535
-**10000000: vbr-neuv@vth-neuv**: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 2048 qdisc noqueue state UP group default qlen 1000
-    link/ether aa:22:59:0b:b5:02 brd ff:ff:ff:ff:ff:ff promiscuity 0 minmtu 68 maxmtu 65535
-    veth numtxqueues 1 numrxqueues 1 gso_max_size 65536 gso_max_segs 65535
-**10000001: vth-neuv@vbr-neuv**: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 2048 qdisc noqueue state UP group default
-    link/ether ce:eb:a0:42:1e:71 brd ff:ff:ff:ff:ff:ff promiscuity 0 minmtu 68 maxm
+**vin和vex接口**
+
+39: vexbe87-eth0@if40: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 8e:15:42:f2:9d:cc brd ff:ff:ff:ff:ff:ff link-netnsid 0
+40: vinbe87-eth0@if139: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 7e:36:2f:31:5b:f5 brd ff:ff:ff:ff:ff:ff link-netnsid 1
+
+vex的数据源是从哪里来的？
+
+
+
+**vbr和vth接口**
+
+10000000: vbr-neuv@vth-neuv: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 2048 qdisc noqueue state UP group default qlen 1000
+    link/ether 2a:c8:cf:da:b1:26 brd ff:ff:ff:ff:ff:ff
+10000001: vth-neuv@vbr-neuv: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 2048 qdisc noqueue state UP group default 
+    link/ether 66:f7:6c:62:c8:8b brd ff:ff:ff:ff:ff:ff
 
 
 
 ## 1、2 业务容器接口情况
 
-1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
-    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00 promiscuity 0 minmtu 0 maxmtu 0 numtxqueues 1 numrxqueues 1 gso_max_size 65536 gso_max_segs 65535
-    inet 127.0.0.1/8 scope host lo
+139: eth0@if40: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default 
+    link/ether 02:42:ac:11:00:02 brd ff:ff:ff:ff:ff:ff link-netnsid 1
+    inet 172.17.0.2/16 brd 172.17.255.255 scope global eth0
        valid_lft forever preferred_lft forever
-**4: tunl0@NONE:** <NOARP> mtu 1480 qdisc noop state DOWN group default qlen 1000
-    link/ipip 0.0.0.0 brd 0.0.0.0 promiscuity 0 minmtu 0 maxmtu 0
-    ipip any remote any local any ttl inherit nopmtudisc numtxqueues 1 numrxqueues 1 gso_max_size 65536 gso_max_segs 65535
-**106: eth0@if5:** <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1440 qdisc noqueue state UP group default qlen 1000
-    link/ether 5e:d7:54:1f:df:45 brd ff:ff:ff:ff:ff:ff link-netnsid 1 promiscuity 0 minmtu 68 maxmtu 65535
-    veth numtxqueues 1 numrxqueues 1 gso_max_size 65536 gso_max_segs 65535
-    inet 10.42.236.131/32 brd 10.42.236.131 scope global eth0
-       valid_lft forever preferred_lft forever
-
-
 
 
 
 ## 1、3 vin和vex的关系
-
-![image-20220524141400147](picture/image-20220524141400147.png)
 
 **enforcer容器接口结论：**
 
@@ -94,17 +82,29 @@ idx是在enforcer网络命名空间中的端口索引
 
 
 
-转到业务容器中去查看下接口。
+当将centos和nginx的容器都设置成protect模式后，每个容器都会生成一个vin和vex的veth pair对。
 
-```
-106: eth0@if5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1440 qdisc noqueue state UP group default qlen 1000
-    link/ether 5e:d7:54:1f:df:45 brd ff:ff:ff:ff:ff:ff link-netnsid 1 promiscuity 0 minmtu 68 maxmtu 65535
-    veth numtxqueues 1 numrxqueues 1 gso_max_size 65536 gso_max_segs 65535
-    inet 10.42.236.131/32 brd 10.42.236.131 scope global eth0
+37: vexb76f-eth0@if38: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether c2:b7:8b:70:b7:03 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+38: vinb76f-eth0@if137: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 8a:09:42:8b:19:fa brd ff:ff:ff:ff:ff:ff link-netnsid 2
+39: vexbe87-eth0@if40: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 06:46:9c:cc:37:e3 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+40: vinbe87-eth0@if139: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 3e:04:71:72:1c:12 brd ff:ff:ff:ff:ff:ff link-netnsid 1
+45: eth0@if46: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default 
+    link/ether 02:42:ac:11:00:03 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 172.17.0.3/16 brd 172.17.255.255 scope global eth0
        valid_lft forever preferred_lft forever
-```
+    inet6 2001:db8:abc1::242:ac11:3/64 scope global nodad 
+       valid_lft forever preferred_lft forever
+    inet6 fe80::42:acff:fe11:3/64 scope link 
+       valid_lft forever preferred_lft forever
 
-在业务容器中，接口索引为106的接口是eth0，其对端veth接口的索引是5，即vin362a-eth0
+10000000: vbr-neuv@vth-neuv: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 2048 qdisc noqueue state UP group default qlen 1000
+    link/ether 12:80:09:ee:95:51 brd ff:ff:ff:ff:ff:ff
+10000001: vth-neuv@vbr-neuv: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 2048 qdisc noqueue state UP group default 
+    link/ether 5e:22:98:52:08:6c brd ff:ff:ff:ff:ff:ff
 
 
 
@@ -122,28 +122,31 @@ bcmac和ucmac的作用是什么？
 
 
 
+重新计算各种mac地址的含义
+
+![image-20220712191953437](picture/image-20220712191953437.png)
+
+![image-20220712192012539](picture/image-20220712192012539.png)
+
+![image-20220712192038988](picture/image-20220712192038988.png)
+
 pair.MAC
 
-mac: 02:42:ac:11:00:03
-bcmac: ff:ff:ff:00:00:07
-ucmac: 4e:65:75:56:00:07
+////////////////////通过上面三张图来计算得出//////////////////////////////
 
-看着这个ucmac好眼熟啊。
+mac: 02:42:ac:11:00:02
+bcmac: ff:ff:ff:00:00:27
+ucmac: 4e:65:75:56:00:13
 
+这个mac（02:42:ac:11:00:02）就是业务容器中eth0接口对应的mac
 
-
-mac: 02:42:ac:11:00:04
-
-bcmac: ff:ff:ff:00:00:09
-ucmac: 4e:65:75:56:00:09
+//////////////////////////////////////////////////
 
 
 
 ## 2、2 tc规则分析
 
 查看tc的规则
-
-规则已经弄了，但是发现自己
 
 **规则1**
 
@@ -156,14 +159,14 @@ ucmac: 4e:65:75:56:00:09
 // Forward IP packet, forward unicast packet with DA to the workload 带有DA的组播数据转发给工作负载
 
 ```shell
-tc filter add dev vex5fe4-eth0 pref 10001 parent ffff: protocol ip 
-u32 match u8 0 1 at -14 
+tc filter add dev vexbe87-eth0 pref 10001 parent ffff: protocol ip u32 
+match u8 0 1 at -14 
 match u16 0x0242 0xffff at -14 
-match u32 0xac110004 0xffffffff at -12 
+match u32 0xac110002 0xffffffff at -12 
 action pedit 
 munge offset -14 u16 set 0x4e65 
-munge offset -12 u32 set 0x7556001b pipe 
-action mirred egress mirror dev vbr-neuv
+munge offset -12 u32 set 0x75560027 
+pipe action mirred egress mirror dev vbr-neuv
 ```
 
 mirred操作允许对接收到数据包进行镜像或重定向。
@@ -197,9 +200,7 @@ pedit是通用的数据包编辑操作。
 // Forward the rest
 
 ```shell
-tc filter add dev vex63fb-eth0 pref 10002 parent ffff: protocol all 
-u32 match u8 0 0 
-action mirred egress mirror dev vin63fb-eth0
+tc filter add dev vexbe87-eth0 pref 10002 parent ffff: protocol all u32 match u8 0 0 action mirred egress mirror dev vinbe87-eth0
 ```
 
 对应的代码为
@@ -215,21 +216,6 @@ cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
 
 **规则3**
 
-规则1如下：
-
-```
-tc filter add dev vex5fe4-eth0 pref 10001 parent ffff: protocol ip 
-u32 match u8 0 1 at -14 
-match u16 0x0242 0xffff at -14 
-match u32 0xac110004 0xffffffff at -12 
-action pedit 
-munge offset -14 u16 set 0x4e65 
-munge offset -12 u32 set 0x7556001b pipe 
-action mirred egress mirror dev vbr-neuv
-```
-
-
-
 ```
 // Egress --
 // Bypass multicast
@@ -241,14 +227,7 @@ action mirred egress mirror dev vbr-neuv
 ```
 
 ```
-tc filter add dev vin63fb-eth0 pref 10001 parent ffff: protocol ip 
-u32 match u8 0 1 at -14 
-match u32 0x0242ac11 0xffffffff at -8 
-match u16 0x0005 0xffff at -4 
-action pedit 
-munge offset -8 u32 set 0x4e657556 
-munge offset -4 u16 set 0x001d pipe
-action mirred egress mirror dev vbr-neuv
+tc filter add dev vinbe87-eth0 pref 10001 parent ffff: protocol ip u32 match u8 0 1 at -14 match u32 0x0242ac11 0xffffffff at -8 match u16 0x0002 0xffff at -4 action pedit munge offset -8 u32 set 0x4e657556 munge offset -4 u16 set 0x0027 pipe action mirred egress mirror dev vbr-neuv
 ```
 
 对应的代码为：
@@ -272,7 +251,7 @@ cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol ip "+
 // Forward the rest
 
 ```
-tc filter add dev vin63fb-eth0 pref 10002 parent ffff: protocol all u32 match u8 0 0 action mirred egress mirror dev vex63fb-eth0
+tc filter add dev vinbe87-eth0 pref 10002 parent ffff: protocol all u32 match u8 0 0 action mirred egress mirror dev vexbe87-eth0
 ```
 
 对应的代码为
@@ -293,13 +272,7 @@ cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
 **规则5.1**
 
 ```
-tc filter add dev vbr-neuv pref 29 parent ffff: protocol all 
-u32 match u16 0x4e65 0xffff at -14 
-match u32 0x7556001d 0xffffffff at -12 
-action pedit 
-munge offset -14 u16 set 0x0242 
-munge offset -12 u32 set 0xac110005 pipe 
-action mirred egress mirror dev vin63fb-eth0
+tc filter add dev vbr-neuv pref 39 parent ffff: protocol all u32 match u16 0x4e65 0xffff at -14 match u32 0x75560027 0xffffffff at -12 action pedit munge offset -14 u16 set 0x0242 munge offset -12 u32 set 0xac110002 pipe action mirred egress mirror dev vinbe87-eth0
 ```
 
 对应的代码为
@@ -320,13 +293,7 @@ cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
 **规则5.2**
 
 ```
-tc filter add dev vbr-neuv pref 30 parent ffff: protocol all 
-u32 match u32 0x4e657556 0xffffffff at -8 
-match u16 0x001d 0xffff at -4
-action pedit 
-munge offset -8 u32 set 0x0242ac11
-munge offset -4 u16 set 0x0005 pipe 
-action mirred egress mirror dev vex63fb-eth0
+tc filter add dev vbr-neuv pref 40 parent ffff: protocol all u32 match u32 0x4e657556 0xffffffff at -8 match u16 0x0027 0xffff at -4 action pedit munge offset -8 u32 set 0x0242ac11 munge offset -4 u16 set 0x0002 pipe action mirred egress mirror dev vexbe87-eth0
 ```
 
 对应的代码为
@@ -550,6 +517,20 @@ vbr-neuv和veth-neuv的关系
 ![image-20220524143021751](picture/image-20220524143021751.png)
 
 1、vbr-neuv和vth-neuv是veth pair，向vth-neuv发送数据，vbr-neuv能收到，即vth-neuv是流量入口
+
+
+
+这个图画的还是不够全面的。有点问题
+
+TODO:应该把两遍的图都画以下。实体画的少了很多细节。
+
+在非保护模式下，只有vth-neuv和vbr-neuv接口，并没有vin和vex接口。
+
+
+
+在源容器和目标容器都不设置protect模式时，vth-neuv和vbr-neuv接口上并没有任何流量。
+
+
 
 上图是FwdPortPair函数的流程
 
