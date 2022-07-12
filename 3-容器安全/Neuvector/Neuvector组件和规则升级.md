@@ -68,6 +68,8 @@ K8s，openshift，Rancher都支持滚动更新。可使用此特性来更新Neuv
 kubectl apply -f <yaml file>
 ```
 
+
+
 命令行来升级新版本的Neuvector
 
 ```
