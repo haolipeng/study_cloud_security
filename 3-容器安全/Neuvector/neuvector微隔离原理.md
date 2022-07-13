@@ -136,9 +136,9 @@ pair.MAC
 
 mac: 02:42:ac:11:00:02
 bcmac: ff:ff:ff:00:00:27
-ucmac: 4e:65:75:56:00:13
+ucmac: 4e:65:75:56:00:27
 
-这个mac（02:42:ac:11:00:02）就是业务容器中eth0接口对应的mac
+这个mac（02:42:ac:11:00:02）就是业务容器中eth0接口对应的mac(即源mac)
 
 //////////////////////////////////////////////////
 
@@ -308,6 +308,20 @@ cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
 		pair.MAC[0], pair.MAC[1], pair.MAC[2], pair.MAC[3], pair.MAC[4], pair.MAC[5],
 		pair.exPort)
 ```
+
+
+
+# 三、不同场景分析
+
+## 3、1 两端都未设置保护模式
+
+
+
+## 3、2 仅一端设置保护模式
+
+
+
+## 3、3 两端都设置了保护模式
 
 
 
