@@ -530,11 +530,21 @@ func pullContainerPort(
 }
 ```
 
-疑问点：
+上述代码能有效解决下面问题：
 
 vbr-neuv和vex是如何建立关系的
 
 vbr-neuv和veth-neuv的关系
+
+
+
+猜想：
+
+Neuvector开启protect保护模式时，会调用DPCtrlAddSrvcPort函数
+
+Neuvector关闭protect保护模式时，会调用DPCtrlDelSrvcPort函数
+
+明天要验证下这个事情。
 
 
 
