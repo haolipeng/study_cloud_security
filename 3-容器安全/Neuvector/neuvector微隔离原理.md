@@ -15,13 +15,19 @@ idx是在enforcer网络命名空间中的端口索引
 
 问题2：微隔离的原理到底是如何实现的？
 
-问题3：SA和DA是什么？（待验证）
+问题3：SA和DA是什么？个人分析，SA是源地址，DA是目的地址。
 
 问题4：vin和vex接口之间的关系是什么？
 
 问题5：vbr-neuv和vth-neuv接口是起什么作用的？
 
+
+
 问题6：tc规则中的bcmac和ucmac代表什么意思？
+
+答：bcmac是广播地址，ucmac是组播地址。
+
+
 
 问题7：是每个业务容器都对应会创建一个vin和vex接口吗？需要做实验来好好验证下，新建两个容器，会有4个vin和vex接口吗？
 
@@ -48,8 +54,6 @@ idx是在enforcer网络命名空间中的端口索引
 
 vex的数据源是从哪里来的？
 
-
-
 **vbr和vth接口**
 
 10000000: vbr-neuv@vth-neuv: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 2048 qdisc noqueue state UP group default qlen 1000
@@ -65,6 +69,10 @@ vex的数据源是从哪里来的？
     link/ether 02:42:ac:11:00:02 brd ff:ff:ff:ff:ff:ff link-netnsid 1
     inet 172.17.0.2/16 brd 172.17.255.255 scope global eth0
        valid_lft forever preferred_lft forever
+
+
+
+在部署时，我部署了两个业务容器，一个nginx容器，一个centos容器，在centos容器中发送curl命令，去到nginx容器中请求。
 
 
 
@@ -108,19 +116,11 @@ vex的数据源是从哪里来的？
 
 
 
+40: vinbe87-eth0@if139接口的对端容器是139，即业务容器的接口。
+
 # 二、traffic control 规则
 
 ## 2、1 tc中mac地址分析
-
-搞清楚这里面的mac地址都是哪里来的？
-
-mac是容器的。哪个容器的？
-
-设置的bcmac和ucmac是基于什么来计算的？
-
-bcmac和ucmac的作用是什么？
-
-
 
 重新计算各种mac地址的含义
 
@@ -139,6 +139,12 @@ bcmac: ff:ff:ff:00:00:27
 ucmac: 4e:65:75:56:00:27
 
 这个mac（02:42:ac:11:00:02）就是业务容器中eth0接口对应的mac(即源mac)
+
+
+
+nginx容器的mac地址为
+
+mac: 02:42:ac:11:00:04
 
 //////////////////////////////////////////////////
 
@@ -193,7 +199,7 @@ cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol ip "+
 
 pedit是通用的数据包编辑操作。
 
-
+将源mac地址（02:42:ac:11:00:02）修改为4e:65:75:56:00:27
 
 **规则2**
 
@@ -315,9 +321,15 @@ cmd = fmt.Sprintf("tc filter add dev %v pref %v parent ffff: protocol all "+
 
 ## 3、1 两端都未设置保护模式
 
+enforcer容器中，有vbr-neuv和vth-neuv接口，但是vbr和vth接口上没有流量经过。
+
+容器之间还是采用容器网络veth pair进行网络通信。
+
 
 
 ## 3、2 仅一端设置保护模式
+
+enforcer容器中，有vbr-neuv和vth-neuv接口，一个vin接口和一个vex接口。
 
 
 
