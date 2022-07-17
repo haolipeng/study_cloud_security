@@ -4,12 +4,20 @@ https://mp.weixin.qq.com/s?__biz=MzUzNTY5MzU2MA==&mid=2247487453&idx=1&sn=4d9ae5
 
 
 
-kubernetes template
+对于我们来说，有很多的东西可以商量。
+
+**kubernetes template** vscode插件
 
 用于写Kubernetes的片段
 
 
 
-快速掌握Service
+**Kubernetes国内镜像、下载安装包和拉取gcr.io镜像**
+
+https://blog.csdn.net/nklinsirui/article/details/80581286
+
+
+
+**快速掌握Service**
 
 https://mp.weixin.qq.com/s?__biz=MzUzNTY5MzU2MA==&mid=2247486082&idx=1&sn=42a9bc8fcfc9da09445e9e2f4cf2fb96&chksm=fa80db15cdf752039494992f71a3bc488cf386841bd1aaaa44115f5e7f155ba55ce468ec89ee&token=2033333242&lang=zh_CN&scene=21#wechat_redirect
