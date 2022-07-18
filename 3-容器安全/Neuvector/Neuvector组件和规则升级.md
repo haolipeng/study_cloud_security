@@ -54,8 +54,6 @@ docker-compose -f <filename> up -d
 
 
 
-
-
 # 二、滚动更新
 
 K8s，openshift，Rancher都支持滚动更新。可使用此特性来更新Neuvector容器，确保至少有一个Allinone或控制器在运行，策略、日志和连接数据才不会丢。确保容器更新间至少有 30 秒的间隔，以便可以选举新的leader并在控制器之间同步数据。
@@ -252,3 +250,10 @@ spec:
   restartPolicy: Never
 ```
 
+# 四、scanner原理分析
+
+将CVE数据库扣出来，
+
+kubeadm更换仓库
+
+https://hub.docker.com/r/labring/kubernetes/tags
