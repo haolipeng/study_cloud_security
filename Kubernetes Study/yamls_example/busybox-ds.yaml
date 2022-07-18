@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: DaemonSet # 声明DaemonSet
+metadata:
+  name: busybox-ds
+spec:
+  selector:
+    matchLabels:
+      app: busybox
+      release: stable
+  template:
+    metadata:
+      labels:
+        app: busybox
+        release: stable
+    spec:
+      containers:
+      - name: busybox
+        image: latelee/busybox
+        imagePullPolicy: IfNotPresent
+        command:
+        - sleep
+        - "3600"

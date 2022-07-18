@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: centos
+  namespace: kube-system
+  labels:
+    app: centos
+spec:
+  selector:
+    matchLabels:
+      name: centos
+  template:
+    metadata:
+      labels:
+        name: centos
+    spec:
+      # 加入宿主机网络命名空间
+      hostNetwork: true
+      # 加入宿主机PID命名空间
+      hostPID: true
+      # 加入宿主机IPC命名空间
+      hostIPC: true 
+      containers:
+      - name: centos
+        image: centos:6.8
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          # 设置PID为root
+          runAsUser: 0
+          # 特权模式
+          privileged: true
