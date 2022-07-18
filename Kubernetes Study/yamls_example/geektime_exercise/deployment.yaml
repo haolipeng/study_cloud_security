@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hostnames
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hostnames
+  template:
+    metadata:
+      labels:
+        app: hostnames
+    spec:
+      containers:
+      - image:  k8s.gcr.io/serve_hostname
+        name: hostnames
+        ports:
+          - containerPort: 9376
+            protocol: TCP
+

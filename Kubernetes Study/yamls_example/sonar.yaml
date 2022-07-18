@@ -1,0 +1,21 @@
+---
+kind: ReplicationController
+apiVersion: v1
+metadata:
+  name: sonarqube
+spec:
+  replicas: 1
+  selector:
+    name: sonarqube
+  template:
+    metadata:
+      labels:
+        name: sonarqube
+    spec:
+      containers:
+      - name: sonarqube
+        image: 192.168.32.131:5000/sonarqube:5.6.5
+        ports:
+        - containerPort: 9000
+          protocol: TCP
+

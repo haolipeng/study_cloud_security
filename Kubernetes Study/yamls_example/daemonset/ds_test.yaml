@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-exporter
+  namespace: kube-system
+  labels:
+    app: node-exporter
+spec:
+  selector:
+    matchLabels:
+      name: node-exporter
+  template:
+    metadata:
+      labels:
+        name: node-exporter
+    spec:
+      containers:
+      - name: node-exporter
+        image: registry.cn-shenzhen.aliyuncs.com/leedon/node-exporter
+        ports:
+        - containerPort: 9100
+          hostPort: 9100

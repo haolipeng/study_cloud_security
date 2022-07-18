@@ -4,7 +4,68 @@ https://mp.weixin.qq.com/s?__biz=MzUzNTY5MzU2MA==&mid=2247487453&idx=1&sn=4d9ae5
 
 
 
-对于我们来说，有很多的东西可以商量。
+yum remove docker \
+           docker-client \
+           docker-client-latest \
+           docker-common \
+           docker-latest \
+           docker-latest-logrotate \
+           docker-logrotate \
+           docker-engine
+
+
+
+# ⚠️ 添加「官方」或「阿里云」的docker仓库
+$ wget https://download.docker.com/linux/centos/docker-ce.repo -O /etc/yum.repos.d/docker-ce.repo
+
+$ wget https://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo -O /etc/yum.repos.d/docker-ce.repo
+
+# 查看可用的版本,
+# 版本号格式：<year>.<month>.<N>
+# 版本号说明：https://docs.docker.com/engine/install/#release-channels
+$ yum list docker-ce --showduplicates
+  docker-ce.x86_64    	18.06.1.ce-3.el7		docker-ce-stable
+  docker-ce.x86_64    	18.06.2.ce-3.el7     	docker-ce-stable
+  docker-ce.x86_64    	18.06.3.ce-3.el7     	docker-ce-stable
+  docker-ce.x86_64    	3:20.10.11-3.el7     	docker-ce-stable
+  docker-ce.x86_64    	3:20.10.12-3.el7     	docker-ce-stable
+
+# ⚠️ 安装「最新版本」或「指定版本」
+$ yum -y install docker-ce docker-ce-cli containerd.io
+$ yum -y install docker-ce-20.10.12 docker-ce-cli-20.10.12 containerd.io
+
+# 启动Docker服务
+$ systemctl start docker
+$ systemctl enable docker
+
+# 测试服务
+$ docker run hello-world
+
+
+
+```shell
+kubeadm init \
+--apiserver-advertise-address=10.240.19.246 \
+--image-repository registry.aliyuncs.com/google_containers \
+--kubernetes-version=v1.18.20 
+
+
+kubeadm init \
+--apiserver-advertise-address=10.240.19.246 \
+--image-repository registry.aliyuncs.com/google_containers \
+--kubernetes-version=v1.18.20 \
+--pod-network-cidr=10.244.0.0/16 \
+--service-cidr=10.96.0.0/12
+```
+
+
+
+```
+kubeadm join 10.240.19.246:6443 --token 9fm46i.gbgdrm7ov8jl849o \
+    --discovery-token-ca-cert-hash sha256:f621188a565d37c1e18ed69c4a4d2c29d1223fd1afe202de771df5b230bae754
+```
+
+
 
 **kubernetes template** vscode插件
 
