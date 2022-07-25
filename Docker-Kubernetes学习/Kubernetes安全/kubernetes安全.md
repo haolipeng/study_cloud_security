@@ -3,7 +3,6 @@
 ![image-20220613142742721](picture/image-20220613142742721.png)
 
 
-
 #### What is docker-security-checker?
 
 docker-security-checker scenario uses OPA (open policy agent) rego rules to perform security liniting on `Dockerfiles` using conftest.
