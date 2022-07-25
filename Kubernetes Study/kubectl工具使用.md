@@ -1,12 +1,28 @@
 **docker cp文件拷贝命令**
 
-docker cp 7155feee348e:/home/cloudnative-security/src/dpi-agent/build/dpi-agent .
+语法格式 ：docker cp 源地址 目的地址
 
-docker cp 源地址 目的地址
+将docker容器的内容拷贝到宿主机
+
+docker cp 7155feee348e:/home/cloudnative-security/src/dpi-agent/build/dpi-agent  .
 
 
+
+将宿主机的文件拷贝到容器
 
 scp dpi-agent root@10.254.177.30:/home
+
+
+
+**kubectl cp拷贝文件命令**
+
+```
+kubectl cp dpi-agent ccs-agent-zcxr4:/home -c dpi-agent -n cnds
+```
+
+将dpi-agent文件拷贝到pod ccs-agent-zcxr4的dpi-agent container容器中。
+
+-c 指定拷贝到哪个容器中。
 
 
 
@@ -52,18 +68,6 @@ root@cd-xjsq202207130073-ubuntu-zhanglimao-3:/#
 
 
 
-**kubectl cp拷贝文件命令**
-
-```
-kubectl cp dpi-agent ccs-agent-zcxr4:/home -c dpi-agent -n cnds
-```
-
-将dpi-agent文件拷贝到pod ccs-agent-zcxr4的dpi-agent container容器中。
-
--c 指定拷贝到哪个容器中。
-
-
-
 **查看pod中有哪些业务容器**
 
 方法1
@@ -95,4 +99,12 @@ falco
 kubectl exec -it -n cnds ccs-agent-zcxr4 -c dpi-agent -- bash
 
 -c是进入到pod中的某个container容器中
+
+
+
+kubectl命令的补全操作（已完成）
+
+web pod中会curl ccs-service.cnds.svc.cluster.local:8090
+
+
 

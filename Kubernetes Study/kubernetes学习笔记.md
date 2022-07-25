@@ -1,17 +1,12 @@
-# 利用Kubernetes搭建便携式开发环境之MySQL和Redis
+docker-compose学习
+
+https://docs.divio.com/en/latest/reference/docker-docker-compose/
+
+
+
+**利用Kubernetes搭建便携式开发环境之MySQL和Redis**
 
 https://mp.weixin.qq.com/s?__biz=MzUzNTY5MzU2MA==&mid=2247487453&idx=1&sn=4d9ae57ea9079a7cb57d84672b29491a&chksm=fa80de4acdf7575cb9f6ced3a5657c48434d881cbbf694392efe79e4961d353b1f49975b223b&scene=178&cur_album_id=1394839706508148737#rd
-
-
-
-yum remove docker \
-           docker-client \
-           docker-client-latest \
-           docker-common \
-           docker-latest \
-           docker-latest-logrotate \
-           docker-logrotate \
-           docker-engine
 
 
 
@@ -82,10 +77,6 @@ https://github.com/dennyzhang/kubernetes-yaml-templates
 **Kubernetes国内镜像、下载安装包和拉取gcr.io镜像**
 
 https://blog.csdn.net/nklinsirui/article/details/80581286
-
-
-
-
 
 
 

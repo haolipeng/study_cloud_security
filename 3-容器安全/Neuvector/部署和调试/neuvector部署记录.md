@@ -53,6 +53,8 @@ Neuvector的enforcer容器中默认会处于NVProtect模式，用户进入容器后输入一些敏感命令
 
 ![image-20220621104134559](picture/image-20220621104134559.png)
 
+具体的代码修改，参见git的提交记录。
+
 ### 2） agent删除对dp的健康检查
 
 在agent的cbKeepAlive函数，直接在函数的开始处返回true，标明检查一直是成功的。
@@ -61,7 +63,7 @@ Neuvector的enforcer容器中默认会处于NVProtect模式，用户进入容器后输入一些敏感命令
 
 ### 3）monitor删除对dp监控
 
-将PROC_DP变量所在的代码行删除。
+将PROC_DP变量所在的代码行删除。（删除的行对应的程序，monitor不会自启动）
 
 删除monitor中监控dp的代码，并注释掉stop_proc(PROC_DP, SIGSEGV, false);函数
 
@@ -75,7 +77,17 @@ Neuvector的enforcer容器中默认会处于NVProtect模式，用户进入容器后输入一些敏感命令
 
 
 
-## 1、2 dlv启动agent
+## 1、2 dlv启动agent和controller
+
+**agent的命令行参数如下：**
+
+```
+/usr/local/bin/agent -c
+```
+
+
+
+**dlv调试命令如下：**
 
 ```shell
 dlv --headless=true --listen=:2345 --api-version=2 --accept-multiclient exec /usr/local/bin/agent -- -c
@@ -85,11 +97,15 @@ dlv --headless=true --listen=:2345 --api-version=2 --accept-multiclient exec /us
 
 
 
+**dlv attach命令如下：**
+
 ```
-dlv --headless=true --listen=:2345 --api-version=2 --accept-multiclient exec /usr/local/bin/agent -- -j 10.240.19.222
+dlv attach 12306 --headless --listen=:2345 --api-version=2 --accept-multiclient
 ```
 
-最好是将dlv的命令行写入到supervisor（这块我也尝试了，感觉也一般）
+其中12306是agent程序的pid。
+
+备注：和上面的dlv命令相比，dlv attach命令无需额外添加 -c命令行参数，因为agent启动时已经添加了参数。
 
 
 
@@ -119,7 +135,7 @@ allinone_haolp_5.0.0 | 2022-06-21T10:17:43.917|ERRO|AGT|dp.dpSendMsgExSilent: Da
 
 # 二、远程调试dp
 
-2、1 步骤
+## 2、1 步骤
 
 
 
@@ -278,8 +294,6 @@ allinone容器启动Neuvector的方式是，利用supervisor来启动monitor进程，
 
 ## 4、配置clion IDE
 
-
-
 https://github.com/vishvananda/netlink
 netlink还是需要好好的熟悉下。linux上很多的命令和工具都是采用netlink来实现的。
 
@@ -287,25 +301,64 @@ netlink还是需要好好的熟悉下。linux上很多的命令和工具都是采用netlink来实现的。
 
 修改/etc/profile的内容，用于调试。
 
-添加配置文件。
+# 五、远程调试controller
+
+**在ubuntu下编译的controller可以在alpine系统中运行；**
+
+**在centos下编译的controller可以在alpine系统中运行不起来；**
 
 
 
-# 五、程序日志初始化
+**controller的命令行参数如下：**
 
-main.(*Bench).doDockerHostBench: Running benchmark checks done
+```
+/ # ps -ef | grep "/usr/local"
+root       26003   25951 15 06:35 ?        00:00:07 java -jar /usr/local/bin/admin-assembly-1.0.jar
+root       26004   25951  0 06:35 ?        00:00:00 /usr/local/bin/monitor -d
+root       26017   26004  2 06:35 ?        00:00:01 /usr/local/bin/controller -j 10.240.19.222
+root       26018   26004  4 06:35 ?        00:00:01 /usr/local/bin/dp -n 1
+root       26019   26004 12 06:35 ?        00:00:06 /usr/local/bin/agent -c
+root       26085   26017  3 06:35 ?        00:00:01 /usr/local/bin/consul agent -datacenter neuvector -data-dir /tmp/neuvector -server -bootstrap -config-file /tmp/consul.json -bind 172.17.0.2 -advertise 10.240.19.222 -node 10.240.19.222 -node-id 805d2ee2-e8d8-eb7a-164d-08c83916a840 -raft-protocol 3
+```
 
-main.(*Bench).doDockerContainerBench: Running benchmark checks done
+疑惑：最后一行consul的启动和controller是否有关。
 
-main.(*Bench).doContainerCustomCheck: Running benchmark checks done
+**dlv调试命令如下：**
 
-做主机层面、容器层面的基线检查。
+```
+dlv --headless=true --listen=:2345 --api-version=2 --accept-multiclient exec /usr/local/bin/controller -- -j 10.240.19.222
+```
 
 
 
-main.taskAddContainer: - id=42234cc5128b9ff37f9739be63f1bac31c72ca514c9b2c26d20ebd087f082cd2 name=kind_wright
+**疑问点：consul程序是controller连带启动的吗？**
 
-main.taskAddContainer: - id=84e8ee60180561c8883ffd9fc859714d4f38a331827e78bf59bc41966a3bc737 name=amazing_visvesvaraya
+从上述角度来说，调试时采用dlv还能更好点。
+
+
+
+# 六、Helm部署
+
+helm install neuvector --namespace neuvector neuvector/core  --set registry=docker.io  --set tag=5.0.0-preview.1 --set=controller.image.repository=neuvector/controller.preview -- set=enforcer.image.repository=neuvector/enforcer.preview --set  manager.image.repository=neuvector/manager.preview --set  cve.scanner.image.repository=neuvector/scanner.preview --set cve.updater.image.repository=neuvector/updater.preview
+
+
+
+```
+Get the NeuVector URL by running these commands:
+  NODE_PORT=$(kubectl get --namespace neuvector -o jsonpath="{.spec.ports[0].nodePort}" services neuvector-service-webui)
+  NODE_IP=$(kubectl get nodes --namespace neuvector -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo https://$NODE_IP:$NODE_PORT
+```
+
+
+
+参考链接
+
+https://github.com/neuvector/neuvector-helm
+
+# 
+
+
 
 
 
