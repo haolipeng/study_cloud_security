@@ -1,3 +1,29 @@
+基础概念
+
+DDIO
+
+Data Direct I/O
+
+
+
+传统收包采用硬中断
+
+DPDK未采用硬中断，是通过什么来接收数据包呢？PMD收包模式
+
+
+
+netstat 分析tcp端口和监听信息
+
+https://paper.seebug.org/934/
+
+
+
+Towards Low Latency Interrupt Mode DPDK
+
+
+
+
+
 Q:dpdk如何从pci地址读取数据包？
 
 ![image-20220626204220225](picture/image-20220626204220225.png)
