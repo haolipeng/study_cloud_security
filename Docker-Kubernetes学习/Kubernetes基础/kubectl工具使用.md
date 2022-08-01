@@ -108,3 +108,6 @@ web pod中会curl ccs-service.cnds.svc.cluster.local:8090
 
 
 
+参考链接
+
+https://huweicai.com/kubectl-concepts-and-commands/

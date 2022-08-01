@@ -1,8 +1,36 @@
 带着疑问学习，在学习之前，
 
+CRI（Container Runntime Interface）容器运行时接口
+
+
+
 containerd是什么？
 
+# 二、congtainerd CLI客户端
+
 containerd是从docker中移植出来的。
+
+containerd的命令行如下
+
+- nerdctl
+- crictl
+- ctr
+
+这三者都是好使的。
+
+ctr命令
+
+熟悉docker命令的小伙伴，可能对ctr命令不太顺手。
+
+从containerd的client端获取image和container还算比较简单。
+
+
+
+nerdctl命令
+
+https://www.qikqiak.com/k8strain2/containerd/nerdctl/
+
+
 
 
 
@@ -29,7 +57,7 @@ dockershim是什么？起到什么作用？
 
 containerd-shim作用是什么？
 
-![img](picture/v2-06a5a9fb7bc906ab3233208d9ae18134_1440w.jpg)
+
 
 容器运行时标准
 
@@ -54,6 +82,18 @@ containerd-shim作用是什么？
 
 
 containerd的api是什么样子的？
+
+添加iptables规则这块，现在还没有填写。（TODO）
+
+/proc/1/ns/net是主机的命名空间
+
+
+
+ADD_HOST_IMAGE_TOPIC和
+
+
+
+docker client 的 ContainerInspect
 
 参考博客链接
 
